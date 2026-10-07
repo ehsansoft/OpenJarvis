@@ -103,5 +103,74 @@ class NaraRouterEngine(_OpenAICompatibleEngine):
             return []
         return [dict(item) for item in records if isinstance(item, dict)]
 
+    def list_free_model_ids(self) -> list[str]:
+        """Return model IDs that can be positively classified as free.
+
+        Nara's roster may change over time, so this intentionally avoids a
+        hard-coded allowlist. A model is considered free when its ID explicitly
+        contains a free marker or provider metadata reports zero/free pricing
+        or a free-plan entitlement.
+        """
+        records = self.list_model_metadata()
+        free_ids: list[str] = []
+
+        def _zero(value: Any) -> bool:
+            if value is None:
+                return False
+            if isinstance(value, bool):
+                return False
+            if isinstance(value, (int, float)):
+                return float(value) == 0.0
+            if isinstance(value, str):
+                normalized = value.strip().lower().replace("$", "")
+                return normalized in {"0", "0.0", "0.00", "free", "100% off"}
+            return False
+
+        for record in records:
+            model_id = str(record.get("id", "")).strip()
+            if not model_id:
+                continue
+            lowered = model_id.lower()
+            explicit_id = (
+                "-free" in lowered
+                or lowered.endswith("/free")
+                or lowered.endswith(":free")
+            )
+
+            plan = str(
+                record.get("plan")
+                or record.get("tier")
+                or record.get("entitlement")
+                or ""
+            ).lower()
+            explicit_plan = "free" in plan
+
+            pricing = record.get("pricing")
+            price_zero = False
+            if isinstance(pricing, dict):
+                known = [
+                    pricing.get("input"),
+                    pricing.get("output"),
+                    pricing.get("prompt"),
+                    pricing.get("completion"),
+                    pricing.get("cache"),
+                ]
+                present = [value for value in known if value is not None]
+                price_zero = bool(present) and all(_zero(value) for value in present)
+
+            for key in (
+                "input_price",
+                "output_price",
+                "price_input",
+                "price_output",
+            ):
+                if key in record and _zero(record.get(key)):
+                    price_zero = True
+
+            if explicit_id or explicit_plan or price_zero:
+                free_ids.append(model_id)
+
+        return list(dict.fromkeys(free_ids))
+
 
 __all__ = ["NaraRouterEngine"]
