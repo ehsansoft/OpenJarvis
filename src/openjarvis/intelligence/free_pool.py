@@ -317,7 +317,8 @@ class FreePoolEngine(InferenceEngine):
         if not model.startswith("free/"):
             return "auto"
         task = model.split("/", 1)[1]
-        return task if task in {"auto", "code", "research", "vision", "fast"} else "auto"
+        valid = {"auto", "code", "research", "vision", "fast"}
+        return task if task in valid else "auto"
 
     def _choices(self, model: str) -> list[FreeModelCandidate]:
         self.refresh()
