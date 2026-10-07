@@ -30,9 +30,26 @@ def model() -> None:
     """Manage language models."""
 
 
+@model.command("nara-key")
+def nara_key() -> None:
+    """Securely persist the NaraRouter API key for CLI/server restarts."""
+    from openjarvis.core.credentials import save_credential
+
+    value = click.prompt("NaraRouter API key", hide_input=True).strip()
+    if not value:
+        raise click.ClickException("API key cannot be empty.")
+    save_credential("nararouter", "NARAROUTER_API_KEY", value)
+    click.echo(
+        "Saved NARAROUTER_API_KEY in the local OpenJarvis credential store."
+    )
+
+
 @model.command("list")
 def list_models() -> None:
     """List available models from running engines."""
+    from openjarvis.core.credentials import inject_credentials
+
+    inject_credentials()
     console = Console()
     config = load_config()
     register_builtin_models()
@@ -99,8 +116,10 @@ def free_models(as_json: bool) -> None:
     """Show the live zero-API-cost model pool and stable aliases."""
     import json
 
+    from openjarvis.core.credentials import inject_credentials
     from openjarvis.intelligence.free_pool import FreePoolEngine
 
+    inject_credentials()
     console = Console()
     config = load_config()
     engines = discover_engines(config)
