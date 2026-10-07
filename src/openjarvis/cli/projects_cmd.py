@@ -28,9 +28,9 @@ def projects() -> None:
 
 
 @projects.command("scan")
-@click.argument("root", required=False, type=click.Path(path_type=Path, file_okay=False))
+@click.argument(\n    "root",\n    required=False,\n    type=click.Path(path_type=Path, file_okay=False),\n)
 @click.option("--max-depth", type=click.IntRange(min=0), default=None)
-@click.option("--registry", "registry_path", type=click.Path(path_type=Path, dir_okay=False), default=None)
+@click.option(\n    "--registry",\n    "registry_path",\n    type=click.Path(path_type=Path, dir_okay=False),\n    default=None,\n)
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--no-write", is_flag=True)
 def scan_projects(
@@ -67,7 +67,8 @@ def scan_projects(
         click.echo(f"Registry: {registry_path.resolve()}")
     for record in records:
         langs = ", ".join(record.languages) or "-"
-        click.echo(f"- {record.project_id}: {record.project_type} [{langs}] -> {record.path}")
+        click.echo(\n            f"- {record.project_id}: {record.project_type} "
+            f"[{langs}] -> {record.path}"\n        )
 
 
 @projects.command("list")
