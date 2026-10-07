@@ -9,6 +9,7 @@ so editor integrations do not need to chase rotating provider model IDs.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -278,18 +279,38 @@ class FreePoolEngine(InferenceEngine):
         *,
         prefer_local: bool = True,
         allow_remote: bool = True,
+        refresh_interval_seconds: float = 300.0,
     ) -> None:
         self._engines = list(engines)
         self._prefer_local = prefer_local
         self._allow_remote = allow_remote
-        self._candidates = collect_free_models(self._engines)
+        self._refresh_interval = max(0.0, refresh_interval_seconds)
+        self._last_refresh = 0.0
+        self._candidates: list[FreeModelCandidate] = []
         self._direct: dict[str, FreeModelCandidate] = {}
-        for candidate in self._candidates:
-            # First candidate wins collisions; collect_free_models sorts local first.
-            self._direct.setdefault(candidate.model_id, candidate)
+        self.refresh(force=True)
+
+    def refresh(self, *, force: bool = False) -> None:
+        """Refresh local and remote free rosters after the configured TTL."""
+        now = time.monotonic()
+        if (
+            not force
+            and self._candidates
+            and now - self._last_refresh < self._refresh_interval
+        ):
+            return
+        candidates = collect_free_models(self._engines)
+        direct: dict[str, FreeModelCandidate] = {}
+        for candidate in candidates:
+            # First candidate wins collisions; collection sorts local first.
+            direct.setdefault(candidate.model_id, candidate)
+        self._candidates = candidates
+        self._direct = direct
+        self._last_refresh = now
 
     @property
     def candidates(self) -> list[FreeModelCandidate]:
+        self.refresh()
         return list(self._candidates)
 
     def _task_for_alias(self, model: str) -> str:
@@ -299,6 +320,7 @@ class FreePoolEngine(InferenceEngine):
         return task if task in {"auto", "code", "research", "vision", "fast"} else "auto"
 
     def _choices(self, model: str) -> list[FreeModelCandidate]:
+        self.refresh()
         if model in self._direct:
             return [self._direct[model]]
         if model not in VIRTUAL_ALIASES:
@@ -400,11 +422,13 @@ class FreePoolEngine(InferenceEngine):
         )
 
     def list_models(self) -> list[str]:
-        raw = list(self._direct)
-        aliases = list(VIRTUAL_ALIASES) if self._candidates else []
-        return aliases + raw
+        self.refresh()
+        # Expose only stable aliases so this virtual engine never shadows
+        # concrete model IDs owned by Ollama/NaraRouter in MultiEngine.
+        return list(VIRTUAL_ALIASES) if self._candidates else []
 
     def health(self) -> bool:
+        self.refresh()
         return bool(self._candidates)
 
     def close(self) -> None:
