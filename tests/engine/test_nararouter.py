@@ -83,6 +83,47 @@ class TestNaraRouterEngine:
             "zero-priced",
         ]
 
+    def test_public_free_plan_is_intersected_with_entitlements(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NARAROUTER_API_KEY", "nara-test")
+        engine = NaraRouterEngine(host="https://router.example")
+        with respx.mock:
+            respx.get("https://router.example/v1/models").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {"id": "agnes-3-flash"},
+                            {"id": "paid-model"},
+                        ]
+                    },
+                )
+            )
+            respx.get("https://router.example/api/plans").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "plans": [
+                            {
+                                "name": "Free",
+                                "models": [
+                                    {"id": "agnes-3-flash"},
+                                    {"id": "not-entitled"},
+                                ],
+                            },
+                            {
+                                "name": "Pro",
+                                "models": [{"id": "paid-model"}],
+                            },
+                        ]
+                    },
+                )
+            )
+            free_ids = engine.list_free_model_ids()
+
+        assert free_ids == ["agnes-3-flash"]
+
     def test_discovery_uses_configured_host(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
