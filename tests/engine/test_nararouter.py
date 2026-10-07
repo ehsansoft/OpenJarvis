@@ -50,6 +50,39 @@ class TestNaraRouterEngine:
         assert metadata[0]["context_length"] == 262144
         assert metadata[1]["vision"] is True
 
+    def test_free_roster_uses_positive_evidence(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NARAROUTER_API_KEY", "nara-test")
+        engine = NaraRouterEngine(host="https://router.example")
+        with respx.mock:
+            respx.get("https://router.example/v1/models").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {"id": "paid-model", "pricing": {"input": 1, "output": 2}},
+                            {"id": "nemotron-super-free"},
+                            {
+                                "id": "bonus-model",
+                                "official_savings": "100% off",
+                            },
+                            {
+                                "id": "zero-priced",
+                                "pricing": {"input": 0, "output": 0},
+                            },
+                        ]
+                    },
+                )
+            )
+            free_ids = engine.list_free_model_ids()
+
+        assert free_ids == [
+            "nemotron-super-free",
+            "bonus-model",
+            "zero-priced",
+        ]
+
     def test_discovery_uses_configured_host(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
