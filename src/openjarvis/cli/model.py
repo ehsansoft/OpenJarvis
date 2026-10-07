@@ -93,6 +93,63 @@ def list_models() -> None:
     console.print(table)
 
 
+@model.command("free")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+def free_models(as_json: bool) -> None:
+    """Show the live zero-API-cost model pool and stable aliases."""
+    import json
+
+    from openjarvis.intelligence.free_pool import FreePoolEngine
+
+    console = Console()
+    config = load_config()
+    engines = discover_engines(config)
+    pool = FreePoolEngine(engines)
+
+    payload = {
+        "aliases": pool.list_models(),
+        "candidates": [candidate.to_dict() for candidate in pool.candidates],
+    }
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    if not payload["candidates"]:
+        console.print(
+            "[yellow]No zero-API-cost models detected.[/yellow] "
+            "Start a local engine or configure NARAROUTER_API_KEY."
+        )
+        return
+
+    table = Table(title="Free Model Pool")
+    table.add_column("Engine", style="cyan")
+    table.add_column("Model", style="green")
+    table.add_column("Local", justify="center")
+    table.add_column("Context", justify="right")
+    table.add_column("Capabilities")
+    table.add_column("Evidence", style="dim")
+
+    for candidate in pool.candidates:
+        table.add_row(
+            candidate.engine_key,
+            candidate.model_id,
+            "yes" if candidate.local else "no",
+            (
+                f"{candidate.context_length:,}"
+                if candidate.context_length
+                else "-"
+            ),
+            ", ".join(sorted(candidate.capabilities)) or "-",
+            candidate.reason,
+        )
+    console.print(table)
+    console.print(
+        "\nStable aliases: "
+        + ", ".join(payload["aliases"])
+        + "\nUse for editors/API clients, e.g. model=[cyan]free/code[/cyan]."
+    )
+
+
 @model.command()
 @click.argument("model_name")
 def info(model_name: str) -> None:
