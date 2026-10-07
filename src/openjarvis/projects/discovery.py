@@ -255,7 +255,9 @@ def discover_projects(
     records: list[ProjectRecord] = []
     seen_paths: set[Path] = set()
 
-    for path, _depth in _iter_directories(\n        base, max_depth=max_depth, ignore_names=ignores\n    ):
+    for path, _depth in _iter_directories(
+        base, max_depth=max_depth, ignore_names=ignores
+    ):
         if path == base:
             continue
         markers = _markers(path)
@@ -304,7 +306,10 @@ def write_registry(
         "projects": [record.to_dict() for record in records],
     }
     temporary = target.with_suffix(target.suffix + ".tmp")
-    temporary.write_text(\n        json.dumps(payload, indent=2, ensure_ascii=False),\n        encoding="utf-8",\n    )
+    temporary.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     temporary.replace(target)
     return target
 
