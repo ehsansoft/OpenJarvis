@@ -613,7 +613,6 @@ class EngineConfig:
     def lemonade_host(self, value: str) -> None:
         self.lemonade.host = value
 
-
     @property
     def nararouter_host(self) -> str:
         """Deprecated-style property; prefer engine.nararouter.host."""
