@@ -30,7 +30,7 @@ class TestNaraRouterEngine:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("NARAROUTER_API_KEY", "nara-test")
-        engine = NaraRouterEngine(host="https://router.example")
+        engine = NaraRouterEngine(host="https://router.example", free_only=False)
         with respx.mock:
             route = respx.get("https://router.example/v1/models").mock(
                 return_value=httpx.Response(
@@ -82,6 +82,42 @@ class TestNaraRouterEngine:
             "bonus-model",
             "zero-priced",
         ]
+
+    def test_default_model_listing_is_free_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NARAROUTER_API_KEY", "nara-test")
+        engine = NaraRouterEngine(host="https://router.example")
+        with respx.mock:
+            respx.get("https://router.example/v1/models").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {"id": "free-model"},
+                            {"id": "paid-model"},
+                        ]
+                    },
+                )
+            )
+            respx.get("https://router.example/api/plans").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "plans": [
+                            {
+                                "name": "Free",
+                                "models": [{"id": "free-model"}],
+                            },
+                            {
+                                "name": "Pro",
+                                "models": [{"id": "paid-model"}],
+                            },
+                        ]
+                    },
+                )
+            )
+            assert engine.list_models() == ["free-model"]
 
     def test_public_free_plan_is_intersected_with_entitlements(
         self, monkeypatch: pytest.MonkeyPatch
