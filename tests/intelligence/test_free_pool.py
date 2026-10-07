@@ -91,6 +91,13 @@ def test_collects_only_explicit_nara_free_models() -> None:
     assert "reasoning" in candidates[0].capabilities
 
 
+def test_vision_alias_excludes_text_only_models() -> None:
+    local = _FakeEngine(["qwen3:4b"])
+    candidates = collect_free_models([("ollama", local)])
+    ranked = rank_free_models(candidates, "vision")
+    assert ranked == []
+
+
 def test_code_routing_prefers_local_coder() -> None:
     local = _FakeEngine(["qwen3:4b", "qwen2.5-coder:7b"])
     candidates = collect_free_models([("ollama", local)])
