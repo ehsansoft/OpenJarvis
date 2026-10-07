@@ -40,7 +40,10 @@ default_backend = "sqlite"
 [projects]
 root = "D:\\Projects"
 registry_path = "D:\\AI-Control\\registry\\projects.json"
+inventory_root = "D:\\"
+inventory_path = "D:\\AI-Control\\registry\\drive-inventory.json"
 max_depth = 5
+inventory_max_files = 2000000
 
 [traces]
 enabled = true
