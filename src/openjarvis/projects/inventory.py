@@ -56,6 +56,23 @@ class DriveInventory:
         return asdict(self)
 
 
+def _is_link_or_junction(entry: os.DirEntry[str]) -> bool:
+    """Avoid symlink/junction loops when walking a whole Windows drive."""
+    try:
+        if entry.is_symlink():
+            return True
+    except OSError:
+        return True
+
+    isjunction = getattr(os.path, "isjunction", None)
+    if callable(isjunction):
+        try:
+            return bool(isjunction(entry.path))
+        except OSError:
+            return True
+    return False
+
+
 def scan_drive_inventory(
     root: str | os.PathLike[str],
     *,
@@ -98,6 +115,8 @@ def scan_drive_inventory(
             projects.add(str(current))
 
         for entry in entries:
+            if _is_link_or_junction(entry):
+                continue
             try:
                 is_dir = entry.is_dir(follow_symlinks=False)
                 is_file = entry.is_file(follow_symlinks=False)
