@@ -1,0 +1,61 @@
+"""Tests for the native NaraRouter engine."""
+
+from __future__ import annotations
+
+import httpx
+import pytest
+import respx
+
+from openjarvis.core.config import JarvisConfig
+from openjarvis.engine._discovery import _make_engine
+from openjarvis.engine.nararouter import NaraRouterEngine
+
+
+class TestNaraRouterEngine:
+    def test_engine_identity(self) -> None:
+        assert NaraRouterEngine.engine_id == "nararouter"
+        assert NaraRouterEngine.is_cloud is True
+
+    def test_host_strips_trailing_v1(self) -> None:
+        engine = NaraRouterEngine(host="https://router.example/v1/", api_key="secret")
+        assert engine._host == "https://router.example"
+
+    def test_without_key_does_not_probe(self) -> None:
+        engine = NaraRouterEngine(host="https://router.example")
+        assert engine.health() is False
+        assert engine.list_models() == []
+        assert engine.list_model_metadata() == []
+
+    def test_live_roster_uses_bearer_auth(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NARAROUTER_API_KEY", "nara-test")
+        engine = NaraRouterEngine(host="https://router.example")
+        with respx.mock:
+            route = respx.get("https://router.example/v1/models").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {"id": "model-a", "context_length": 262144},
+                            {"id": "model-b", "vision": True},
+                        ]
+                    },
+                )
+            )
+            assert engine.list_models() == ["model-a", "model-b"]
+            metadata = engine.list_model_metadata()
+
+        assert route.calls.last.request.headers["Authorization"] == "Bearer nara-test"
+        assert metadata[0]["context_length"] == 262144
+        assert metadata[1]["vision"] is True
+
+    def test_discovery_uses_configured_host(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NARAROUTER_API_KEY", "nara-test")
+        config = JarvisConfig()
+        config.engine.nararouter.host = "https://custom-router.example/v1"
+        engine = _make_engine("nararouter", config)
+        assert isinstance(engine, NaraRouterEngine)
+        assert engine._host == "https://custom-router.example"
