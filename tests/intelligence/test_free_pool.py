@@ -98,6 +98,21 @@ def test_vision_alias_excludes_text_only_models() -> None:
     assert ranked == []
 
 
+def test_local_first_beats_remote_specialist_by_default() -> None:
+    local = _FakeEngine(["qwen3:4b"])
+    remote = _FakeEngine(
+        ["remote-coder-free"],
+        is_cloud=True,
+        free_ids=["remote-coder-free"],
+        metadata=[{"id": "remote-coder-free"}],
+    )
+    candidates = collect_free_models(
+        [("ollama", local), ("nararouter", remote)]
+    )
+    ranked = rank_free_models(candidates, "code", prefer_local=True)
+    assert ranked[0].engine_key == "ollama"
+
+
 def test_code_routing_prefers_local_coder() -> None:
     local = _FakeEngine(["qwen3:4b", "qwen2.5-coder:7b"])
     candidates = collect_free_models([("ollama", local)])
