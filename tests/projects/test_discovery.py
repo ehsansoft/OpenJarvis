@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from openjarvis.projects.discovery import discover_projects, load_registry, write_registry
+from openjarvis.projects.discovery import (\n    discover_projects,\n    load_registry,\n    write_registry,\n)
 
 
 def _make_git_repo(path: Path) -> None:
