@@ -1103,6 +1103,63 @@ async def _handle_stream(
     )
 
 
+@router.post("/router/v1/chat/completions")
+async def router_chat_completions(
+    request_body: ChatCompletionRequest,
+    request: Request,
+):
+    """OpenAI-compatible direct-engine endpoint for editor/coding clients.
+
+    This route deliberately bypasses the configured server agent and personal
+    memory injection. Client-supplied tools are forwarded as ordinary OpenAI
+    function-calling definitions, which makes it suitable as the base URL for
+    OpenCode, Kilo Code, and similar clients that already have their own agent
+    loop.
+    """
+    engine = request.app.state.engine
+    model = request_body.model
+    config = getattr(request.app.state, "config", None)
+    bus = getattr(request.app.state, "bus", None)
+
+    if request_body.stream:
+        if request_body.tools:
+            return await _handle_stream_tools(
+                engine,
+                model,
+                request_body,
+                None,
+                app_config=config,
+                bus=bus,
+                memory_service=None,
+            )
+        return await _handle_stream(
+            engine,
+            model,
+            request_body,
+            None,
+            trace_store=None,
+            app_config=config,
+            bus=bus,
+            memory_service=None,
+        )
+
+    return await asyncio.to_thread(
+        _handle_direct,
+        engine,
+        model,
+        request_body,
+        bus=bus,
+        complexity_info=None,
+        app_config=config,
+    )
+
+
+@router.get("/router/v1/models")
+async def router_list_models(request: Request) -> ModelListResponse:
+    """List models for direct editor clients, including stable free/* aliases."""
+    return await list_models(request)
+
+
 @router.get("/v1/models")
 async def list_models(request: Request) -> ModelListResponse:
     """List selectable engine models for the installed-model picker.
