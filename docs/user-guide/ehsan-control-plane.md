@@ -45,7 +45,12 @@ Start the local API:
 
     jarvis start
 
-Use this OpenAI-compatible base URL from editor clients:
+Use the raw OpenAI-compatible editor gateway (it bypasses the server-side agent
+and personal-memory injection so coding clients keep control of their own tool loop):
+
+    http://127.0.0.1:8000/router/v1
+
+The normal personal-assistant API remains:
 
     http://127.0.0.1:8000/v1
 
