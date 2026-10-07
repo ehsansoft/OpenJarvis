@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
+import pytest
+
 from openjarvis.core.types import Message
 from openjarvis.engine._base import InferenceEngine
 from openjarvis.engine._stubs import StreamChunk
