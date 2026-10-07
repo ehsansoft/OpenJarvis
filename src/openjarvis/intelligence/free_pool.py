@@ -218,9 +218,6 @@ def _score_candidate(
     score = 0
     caps = candidate.capabilities
 
-    if prefer_local and candidate.local:
-        score += 25
-
     if task == "vision":
         if "vision" not in caps:
             return (-10_000, 0, 0, candidate.model_id)
@@ -239,10 +236,11 @@ def _score_candidate(
         score += 15 if "reasoning" in caps else 0
         score += 10 if "long-context" in caps else 0
 
+    local_priority = 1 if prefer_local and candidate.local else 0
     return (
+        local_priority,
         score,
         candidate.context_length,
-        1 if candidate.local else 0,
         candidate.model_id,
     )
 
