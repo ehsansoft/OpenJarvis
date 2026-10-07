@@ -255,4 +255,9 @@ def write_inventory(inventory: DriveInventory, path: str | os.PathLike[str]) -> 
     return target
 
 
-__all__ = ["DriveInventory", "analyze_inventory", "scan_drive_inventory", "write_inventory"]
+__all__ = [
+    "DriveInventory",
+    "analyze_inventory",
+    "scan_drive_inventory",
+    "write_inventory",
+]
