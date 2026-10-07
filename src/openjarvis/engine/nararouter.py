@@ -158,16 +158,35 @@ class NaraRouterEngine(_OpenAICompatibleEngine):
                 present = [value for value in known if value is not None]
                 price_zero = bool(present) and all(_zero(value) for value in present)
 
-            for key in (
-                "input_price",
-                "output_price",
-                "price_input",
-                "price_output",
-            ):
-                if key in record and _zero(record.get(key)):
-                    price_zero = True
+            top_level_prices = [
+                record.get(key)
+                for key in (
+                    "input_price",
+                    "output_price",
+                    "price_input",
+                    "price_output",
+                )
+                if key in record
+            ]
+            if top_level_prices:
+                price_zero = price_zero or all(
+                    _zero(value) for value in top_level_prices
+                )
 
-            if explicit_id or explicit_plan or price_zero:
+            discount = str(
+                record.get("discount")
+                or record.get("official_savings")
+                or record.get("savings")
+                or ""
+            ).strip().lower()
+            explicit_discount = discount in {
+                "100",
+                "100%",
+                "100% off",
+                "free",
+            }
+
+            if explicit_id or explicit_plan or price_zero or explicit_discount:
                 free_ids.append(model_id)
 
         return list(dict.fromkeys(free_ids))
