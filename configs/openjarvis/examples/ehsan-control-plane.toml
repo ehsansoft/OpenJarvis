@@ -1,0 +1,56 @@
+# Ehsan Personal AI Control Plane — foundation preset
+# Secrets are intentionally NOT stored here.
+# Set NARAROUTER_API_KEY in the environment when cloud acceleration is wanted.
+
+[engine]
+default = "ollama"
+
+[engine.ollama]
+host = "http://localhost:11434"
+
+[engine.nararouter]
+host = "https://router.bynara.id"
+
+[intelligence]
+default_model = "qwen3:4b"
+model_code = "qwen3:4b"
+
+[agent]
+default_agent = "orchestrator"
+max_turns = 16
+context_from_memory = true
+
+[tools]
+enabled = [
+  "file_read",
+  "file_write",
+  "apply_patch",
+  "shell_exec",
+  "git_status",
+  "git_diff",
+  "code_interpreter",
+  "web_search",
+  "think",
+  "calculator",
+]
+
+[tools.storage]
+default_backend = "sqlite"
+
+[projects]
+root = "D:\\Projects"
+registry_path = "D:\\AI-Control\\registry\\projects.json"
+max_depth = 5
+
+[traces]
+enabled = true
+
+[learning]
+# Automatic self-modification stays disabled. Traces and evaluations can still
+# feed benchmarked routing and skill improvements.
+enabled = false
+
+[server]
+host = "127.0.0.1"
+port = 8000
+agent = "orchestrator"
