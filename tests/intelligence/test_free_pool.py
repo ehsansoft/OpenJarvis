@@ -7,6 +7,7 @@ from typing import Any
 
 from openjarvis.core.types import Message
 from openjarvis.engine._base import InferenceEngine
+from openjarvis.engine._stubs import StreamChunk
 from openjarvis.intelligence.free_pool import (
     FreePoolEngine,
     collect_free_models,
@@ -93,6 +94,52 @@ def test_code_routing_prefers_local_coder() -> None:
     candidates = collect_free_models([("ollama", local)])
     ranked = rank_free_models(candidates, "code")
     assert ranked[0].model_id == "qwen2.5-coder:7b"
+
+
+@pytest.mark.asyncio
+async def test_rich_stream_preserves_tool_calls() -> None:
+    class _ToolEngine(_FakeEngine):
+        async def stream_full(
+            self,
+            messages: Sequence[Message],
+            *,
+            model: str,
+            **kwargs: Any,
+        ) -> AsyncIterator[StreamChunk]:
+            yield StreamChunk(
+                tool_calls=[
+                    {
+                        "index": 0,
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": '{"path":"README.md"}',
+                        },
+                    }
+                ]
+            )
+            yield StreamChunk(finish_reason="tool_calls")
+
+    local = _ToolEngine(["qwen2.5-coder:7b"])
+    pool = FreePoolEngine([("ollama", local)])
+    chunks = [
+        chunk
+        async for chunk in pool.stream_full(
+            [],
+            model="free/code",
+            tools=[
+                {
+                    "type": "function",
+                    "function": {"name": "read_file"},
+                }
+            ],
+        )
+    ]
+
+    assert chunks[0].tool_calls is not None
+    assert chunks[0].tool_calls[0]["function"]["name"] == "read_file"
+    assert chunks[-1].finish_reason == "tool_calls"
 
 
 def test_virtual_alias_routes_and_records_selection() -> None:
