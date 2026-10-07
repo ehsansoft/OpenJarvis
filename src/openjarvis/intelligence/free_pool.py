@@ -16,6 +16,7 @@ from typing import Any
 
 from openjarvis.core.types import Message
 from openjarvis.engine._base import EngineConnectionError, InferenceEngine
+from openjarvis.engine._stubs import StreamChunk
 
 logger = logging.getLogger(__name__)
 
@@ -420,6 +421,59 @@ class FreePoolEngine(InferenceEngine):
 
         raise EngineConnectionError(
             "All free streaming candidates failed: " + "; ".join(errors[-5:])
+        )
+
+    async def stream_full(
+        self,
+        messages: Sequence[Message],
+        *,
+        model: str,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> AsyncIterator[StreamChunk]:
+        """Delegate rich streaming so editor tool calls survive free routing."""
+        choices = self._choices(model)
+        if not choices:
+            raise EngineConnectionError(f"No free model is available for {model!r}")
+
+        errors: list[str] = []
+        for candidate in choices:
+            emitted = False
+            try:
+                async for chunk in candidate.engine.stream_full(
+                    messages,
+                    model=candidate.model_id,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs,
+                ):
+                    if (
+                        chunk.content
+                        or chunk.tool_calls
+                        or chunk.finish_reason
+                        or chunk.usage
+                    ):
+                        emitted = True
+                    yield chunk
+                return
+            except Exception as exc:
+                if emitted:
+                    raise
+                errors.append(
+                    f"{candidate.engine_key}/{candidate.model_id}: {exc}"
+                )
+                logger.warning(
+                    "Free rich-stream candidate failed before first chunk "
+                    "(%s/%s): %s",
+                    candidate.engine_key,
+                    candidate.model_id,
+                    exc,
+                )
+
+        raise EngineConnectionError(
+            "All free rich-stream candidates failed: "
+            + "; ".join(errors[-5:])
         )
 
     def list_models(self) -> list[str]:
