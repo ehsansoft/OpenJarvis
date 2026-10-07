@@ -1159,7 +1159,9 @@ class ProjectsConfig:
     )
     inventory_root: str = ""
     inventory_path: str = field(
-        default_factory=lambda: str(get_data_dir() / "registry" / "drive-inventory.json")
+        default_factory=lambda: str(
+            get_data_dir() / "registry" / "drive-inventory.json"
+        )
     )
     max_depth: int = 4
     inventory_max_files: int = 2_000_000
