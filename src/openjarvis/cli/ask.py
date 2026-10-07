@@ -952,7 +952,8 @@ def ask(
             "  [cyan]llama-server -m <gguf>[/cyan] — start llama.cpp\n\n"
             "Or configure NARAROUTER_API_KEY for the optional free remote pool.\n\n"
             "[dim]To use a remote engine:[/dim]\n"
-            "  [cyan]jarvis config set engine.ollama.host http://<remote-ip>:11434[/cyan]\n"
+            "  [cyan]jarvis config set engine.ollama.host "
+            "http://<remote-ip>:11434[/cyan]\n"
             "  [dim]or[/dim] [cyan]export OLLAMA_HOST=http://<remote-ip>:11434[/cyan]"
         )
         sys.exit(1)
