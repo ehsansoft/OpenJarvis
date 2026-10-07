@@ -260,6 +260,12 @@ def rank_free_models(
         for candidate in candidates
         if allow_remote or candidate.local
     ]
+    if task == "vision":
+        filtered = [
+            candidate
+            for candidate in filtered
+            if "vision" in candidate.capabilities
+        ]
     return sorted(
         filtered,
         key=lambda candidate: _score_candidate(
