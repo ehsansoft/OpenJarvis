@@ -54,6 +54,10 @@ try {
             "D:\\AI-Control\\registry\\projects.json",
             (Join-Path $StateRoot "registry\projects.json").Replace("\", "\\")
         )
+        $Text = $Text.Replace(
+            "D:\\AI-Control\\registry\\drive-inventory.json",
+            (Join-Path $StateRoot "registry\drive-inventory.json").Replace("\", "\\")
+        )
         Set-Content -Path $ConfigPath -Value $Text -Encoding utf8
     }
 
@@ -74,8 +78,8 @@ try {
     Write-Host "State root:   $StateRoot"
     Write-Host "Projects:     $ProjectsRoot"
     Write-Host ""
-    Write-Host "Optional NaraRouter key for this shell:"
-    Write-Host '  $env:NARAROUTER_API_KEY = "<your key>"'
+    Write-Host "To enable rotating NaraRouter free models securely:"
+    Write-Host "  uv run jarvis model nara-key"
     Write-Host "Then run: uv run jarvis model free"
     Write-Host "Start API: uv run jarvis start"
     Write-Host "Personal API: http://127.0.0.1:8000/v1"
