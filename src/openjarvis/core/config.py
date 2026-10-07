@@ -473,6 +473,17 @@ class LemonadeEngineConfig:
     host: str = "http://localhost:13305"
 
 
+@dataclass(slots=True)
+class NaraRouterEngineConfig:
+    """Per-engine config for NaraRouter.
+
+    API credentials are deliberately read from NARAROUTER_API_KEY rather than
+    stored in config.toml.
+    """
+
+    host: str = "https://router.bynara.id"
+
+
 @dataclass
 class EngineConfig:
     """Inference engine settings with nested per-engine configs."""
@@ -491,6 +502,7 @@ class EngineConfig:
     afm: AfmEngineConfig = field(default_factory=AfmEngineConfig)
     gemma_cpp: GemmaCppEngineConfig = field(default_factory=GemmaCppEngineConfig)
     lemonade: LemonadeEngineConfig = field(default_factory=LemonadeEngineConfig)
+    nararouter: NaraRouterEngineConfig = field(default_factory=NaraRouterEngineConfig)
 
     # Backward-compat properties for old flat attribute names
     @property
@@ -600,6 +612,16 @@ class EngineConfig:
     @lemonade_host.setter
     def lemonade_host(self, value: str) -> None:
         self.lemonade.host = value
+
+
+    @property
+    def nararouter_host(self) -> str:
+        """Deprecated-style property; prefer engine.nararouter.host."""
+        return self.nararouter.host
+
+    @nararouter_host.setter
+    def nararouter_host(self, value: str) -> None:
+        self.nararouter.host = value
 
 
 @dataclass(slots=True)
@@ -1126,6 +1148,17 @@ class ToolsConfig:
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     weather: WeatherToolConfig = field(default_factory=WeatherToolConfig)
     enabled: str = ""  # comma-separated default tools
+
+
+@dataclass(slots=True)
+class ProjectsConfig:
+    """Local project-fabric discovery settings."""
+
+    root: str = ""
+    registry_path: str = field(
+        default_factory=lambda: str(get_data_dir() / "registry" / "projects.json")
+    )
+    max_depth: int = 4
 
 
 @dataclass
@@ -1769,6 +1802,7 @@ class JarvisConfig:
     deep_research: DeepResearchConfig = field(default_factory=DeepResearchConfig)
     learning: LearningConfig = field(default_factory=LearningConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
+    projects: ProjectsConfig = field(default_factory=ProjectsConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
@@ -2091,6 +2125,7 @@ def load_config(path: Optional[Path] = None) -> JarvisConfig:
             "security",
             "channel",
             "tools",
+            "projects",
             "sandbox",
             "scheduler",
             "workflow",
