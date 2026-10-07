@@ -78,7 +78,8 @@ try {
     Write-Host '  $env:NARAROUTER_API_KEY = "<your key>"'
     Write-Host "Then run: uv run jarvis model free"
     Write-Host "Start API: uv run jarvis start"
-    Write-Host "API base:  http://127.0.0.1:8000/v1"
+    Write-Host "Personal API: http://127.0.0.1:8000/v1"
+    Write-Host "Editor API:   http://127.0.0.1:8000/router/v1"
     Write-Host "Editor model alias: free/code"
 } finally {
     Pop-Location
