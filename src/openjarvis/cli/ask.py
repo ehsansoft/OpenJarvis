@@ -846,6 +846,11 @@ def ask(
 
     wall_start = time.monotonic() if enable_profile else None
 
+    # Load persisted provider/tool credentials before engine discovery.
+    from openjarvis.core.credentials import inject_credentials
+
+    inject_credentials()
+
     # Load config
     config = load_config()
 
