@@ -17,7 +17,12 @@ The installer keeps code and state separate:
 - projects: D:\Projects
 
 It does not store a NaraRouter API key in the repository or config file.
-Set the key in the environment or your preferred secret manager.
+Persist it in OpenJarvis' local restricted credential store with:
+
+    jarvis model nara-key
+
+The command prompts with hidden input. Server and CLI startup inject the saved
+credential into the process before NaraRouter discovery.
 
 ## Free model pool
 
