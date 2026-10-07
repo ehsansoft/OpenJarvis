@@ -31,10 +31,10 @@ ingestion: finding a project does not upload or index its source code.
 
 ## NaraRouter
 
-NaraRouter is available as a first-class optional engine. Keep its API key in
-the environment:
+NaraRouter is available as a first-class optional engine. Persist its API key
+in OpenJarvis' local credential store (hidden prompt, no key in Git/config):
 
-    $env:NARAROUTER_API_KEY = "..."
+    jarvis model nara-key
 
 Configure the endpoint without embedding the secret:
 
