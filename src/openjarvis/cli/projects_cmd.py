@@ -54,6 +54,7 @@ def _scan_script_path() -> Path:
 def _write_windows_scan_script(
     *,
     root: Path,
+    projects_root: Path,
     output: Path,
     max_files: int,
 ) -> Path:
@@ -62,9 +63,13 @@ def _write_windows_scan_script(
 
     python = _powershell_quote(sys.executable)
     root_q = _powershell_quote(str(root))
+    projects_q = _powershell_quote(str(projects_root))
     output_q = _powershell_quote(str(output))
     lines = [
         "$ErrorActionPreference = 'Stop'",
+        f"& {python} -m openjarvis.cli projects scan {projects_q} "
+        "--max-depth 5",
+        "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
         f"& {python} -m openjarvis.cli projects inventory {root_q} "
         f"--output {output_q} --max-files {max_files}",
         "exit $LASTEXITCODE",
@@ -266,6 +271,7 @@ def install_scan_task(
         root or _default_inventory_root(project_config.inventory_root)
     ).expanduser().resolve()
     output = Path(project_config.inventory_path).expanduser().resolve()
+    projects_root = _default_root(project_config.root).expanduser().resolve()
     limit = (
         project_config.inventory_max_files
         if max_files is None
@@ -286,6 +292,7 @@ def install_scan_task(
 
     script = _write_windows_scan_script(
         root=root_path,
+        projects_root=projects_root,
         output=output,
         max_files=limit,
     )
@@ -313,7 +320,8 @@ def install_scan_task(
 
     click.echo(f"Installed Windows task: {_SCAN_TASK_NAME}")
     click.echo(f"Daily at: {hour_i:02d}:{minute_i:02d}")
-    click.echo(f"Scan root: {root_path}")
+    click.echo(f"Project root: {projects_root}")
+    click.echo(f"Inventory root: {root_path}")
     click.echo(f"Inventory: {output}")
     click.echo(f"Script: {script}")
 
