@@ -49,7 +49,9 @@ class NaraRouterEngine(_OpenAICompatibleEngine):
         *,
         api_key: str | None = None,
         timeout: float = 600.0,
+        free_only: bool = True,
     ) -> None:
+        self._free_only = free_only
         super().__init__(
             host=_normalize_host(host) if host else None,
             api_key=api_key,
@@ -68,9 +70,11 @@ class NaraRouterEngine(_OpenAICompatibleEngine):
         return super().health()
 
     def list_models(self) -> list[str]:
-        """List models currently entitled for the authenticated account."""
+        """List usable account models, free-only by default."""
         if not self.has_credentials:
             return []
+        if self._free_only:
+            return self.list_free_model_ids()
         return super().list_models()
 
     def list_model_metadata(self) -> list[dict[str, Any]]:
