@@ -28,9 +28,18 @@ def projects() -> None:
 
 
 @projects.command("scan")
-@click.argument(\n    "root",\n    required=False,\n    type=click.Path(path_type=Path, file_okay=False),\n)
+@click.argument(
+    "root",
+    required=False,
+    type=click.Path(path_type=Path, file_okay=False),
+)
 @click.option("--max-depth", type=click.IntRange(min=0), default=None)
-@click.option(\n    "--registry",\n    "registry_path",\n    type=click.Path(path_type=Path, dir_okay=False),\n    default=None,\n)
+@click.option(
+    "--registry",
+    "registry_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+)
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--no-write", is_flag=True)
 def scan_projects(
@@ -67,12 +76,19 @@ def scan_projects(
         click.echo(f"Registry: {registry_path.resolve()}")
     for record in records:
         langs = ", ".join(record.languages) or "-"
-        click.echo(\n            f"- {record.project_id}: {record.project_type} "
-            f"[{langs}] -> {record.path}"\n        )
+        click.echo(
+            f"- {record.project_id}: {record.project_type} "
+            f"[{langs}] -> {record.path}"
+        )
 
 
 @projects.command("list")
-@click.option("--registry", "registry_path", type=click.Path(path_type=Path, dir_okay=False), default=None)
+@click.option(
+    "--registry",
+    "registry_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+)
 @click.option("--json", "as_json", is_flag=True)
 def list_projects(registry_path: Path | None, as_json: bool) -> None:
     """List projects from the last persisted scan."""
@@ -81,7 +97,8 @@ def list_projects(registry_path: Path | None, as_json: bool) -> None:
         registry_path = Path(config.projects.registry_path).expanduser()
     if not registry_path.exists():
         raise click.ClickException(
-            f"Project registry not found: {registry_path}. Run 'jarvis projects scan'."
+            f"Project registry not found: {registry_path}. "
+            "Run 'jarvis projects scan'."
         )
 
     registry = load_registry(registry_path)
@@ -94,7 +111,8 @@ def list_projects(registry_path: Path | None, as_json: bool) -> None:
     for project in projects_data:
         click.echo(
             f"- {project.get('project_id', '?')}: "
-            f"{project.get('project_type', 'generic')} -> {project.get('path', '')}"
+            f"{project.get('project_type', 'generic')} -> "
+            f"{project.get('path', '')}"
         )
 
 
