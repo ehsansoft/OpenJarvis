@@ -270,6 +270,25 @@ def serve(
     if cloud_engine is not None:
         multi_entries.append(("cloud", cloud_engine))
 
+    # Stable zero-API-cost aliases for editor/CLI clients. The free pool is
+    # built from the same discovered engines, so local Ollama/etc. and the
+    # currently entitled NaraRouter free roster can fail over without clients
+    # chasing rotating provider model IDs.
+    try:
+        from openjarvis.intelligence.free_pool import FreePoolEngine
+
+        free_pool = FreePoolEngine(all_engines)
+        if free_pool.health():
+            multi_entries.append(("free-pool", free_pool))
+            all_models["free-pool"] = free_pool.list_models()
+            merge_discovered_models("free-pool", all_models["free-pool"])
+            console.print(
+                "  Free pool: [cyan]enabled[/cyan] "
+                f"({len(free_pool.candidates)} zero-API-cost models)"
+            )
+    except Exception as exc:
+        logger.debug("Free model pool initialization failed: %s", exc)
+
     if len(multi_entries) > 1:
         from openjarvis.engine.multi import MultiEngine
 
