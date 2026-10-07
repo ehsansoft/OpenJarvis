@@ -44,6 +44,13 @@ def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
     if key == "litellm":
         return cls(default_model=config.intelligence.default_model or None)
 
+    if key == "nararouter":
+        cfg = config.engine.nararouter
+        return cls(
+            host=cfg.host or None,
+            free_only=cfg.free_only,
+        )
+
     # gemma_cpp: pass config fields instead of host
     if key == "gemma_cpp":
         cfg = config.engine.gemma_cpp
