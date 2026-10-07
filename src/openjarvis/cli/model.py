@@ -49,6 +49,17 @@ def list_models() -> None:
     for ek, model_ids in all_models.items():
         merge_discovered_models(ek, model_ids)
 
+    # Surface stable free/* aliases alongside concrete engine models.
+    try:
+        from openjarvis.intelligence.free_pool import FreePoolEngine
+
+        free_pool = FreePoolEngine(engines)
+        if free_pool.health():
+            all_models["free-pool"] = free_pool.list_models()
+            merge_discovered_models("free-pool", all_models["free-pool"])
+    except Exception:
+        pass
+
     table = Table(title="Available Models")
     table.add_column("Engine", style="cyan")
     table.add_column("Model", style="green")
