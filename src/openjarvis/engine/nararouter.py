@@ -103,21 +103,89 @@ class NaraRouterEngine(_OpenAICompatibleEngine):
             return []
         return [dict(item) for item in records if isinstance(item, dict)]
 
-    def list_free_model_ids(self) -> list[str]:
-        """Return model IDs that can be positively classified as free.
+    def _public_free_plan_ids(self) -> set[str]:
+        """Read model aliases granted by NaraRouter's public Free plan."""
+        try:
+            response = self._client.get("/api/plans", timeout=10.0)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as exc:
+            logger.debug("NaraRouter public plan discovery failed: %s", exc)
+            return set()
 
-        Nara's roster may change over time, so this intentionally avoids a
-        hard-coded allowlist. A model is considered free when its ID explicitly
-        contains a free marker or provider metadata reports zero/free pricing
-        or a free-plan entitlement.
+        free_ids: set[str] = set()
+
+        def _model_id(item: Any) -> str:
+            if isinstance(item, str):
+                return item.strip()
+            if isinstance(item, dict):
+                for key in ("id", "alias", "model", "model_id", "slug"):
+                    value = item.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+            return ""
+
+        def _collect_models(plan: dict[str, Any]) -> None:
+            for key in (
+                "models",
+                "model_ids",
+                "aliases",
+                "included_models",
+                "includedModels",
+            ):
+                values = plan.get(key)
+                if isinstance(values, list):
+                    for item in values:
+                        model_id = _model_id(item)
+                        if model_id:
+                            free_ids.add(model_id)
+
+        def _is_free_plan(plan: dict[str, Any], hinted_key: str = "") -> bool:
+            labels = [
+                hinted_key,
+                str(plan.get("name", "")),
+                str(plan.get("slug", "")),
+                str(plan.get("id", "")),
+                str(plan.get("tier", "")),
+            ]
+            return any(label.strip().lower() == "free" for label in labels)
+
+        def _walk(node: Any, hinted_key: str = "") -> None:
+            if isinstance(node, dict):
+                if _is_free_plan(node, hinted_key):
+                    _collect_models(node)
+                for key, value in node.items():
+                    _walk(value, str(key))
+            elif isinstance(node, list):
+                for item in node:
+                    _walk(item, hinted_key)
+
+        _walk(payload)
+        return free_ids
+
+    def list_free_model_ids(self) -> list[str]:
+        """Return live account models that are safe to use under the Free plan.
+
+        The public plans endpoint is the preferred source because Nara documents
+        it as the live mapping from plans to model aliases. The result is
+        intersected with the authenticated account roster. If plan discovery is
+        temporarily unavailable, conservative positive evidence in roster
+        metadata is used as a fallback.
         """
         records = self.list_model_metadata()
+        entitled = [
+            str(record.get("id", "")).strip()
+            for record in records
+            if str(record.get("id", "")).strip()
+        ]
+        public_free = self._public_free_plan_ids()
+        if public_free:
+            return [model_id for model_id in entitled if model_id in public_free]
+
         free_ids: list[str] = []
 
         def _zero(value: Any) -> bool:
-            if value is None:
-                return False
-            if isinstance(value, bool):
+            if value is None or isinstance(value, bool):
                 return False
             if isinstance(value, (int, float)):
                 return float(value) == 0.0
