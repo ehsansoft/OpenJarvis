@@ -32,6 +32,7 @@ enabled = [
   "web_search",
   "think",
   "calculator",
+  "project_registry",
 ]
 
 [tools.storage]
