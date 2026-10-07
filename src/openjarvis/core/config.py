@@ -482,6 +482,7 @@ class NaraRouterEngineConfig:
     """
 
     host: str = "https://router.bynara.id"
+    free_only: bool = True
 
 
 @dataclass
