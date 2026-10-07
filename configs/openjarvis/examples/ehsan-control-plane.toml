@@ -33,6 +33,7 @@ enabled = [
   "think",
   "calculator",
   "project_registry",
+  "drive_inventory",
 ]
 
 [tools.storage]
