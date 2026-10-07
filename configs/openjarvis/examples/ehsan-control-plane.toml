@@ -10,6 +10,7 @@ host = "http://localhost:11434"
 
 [engine.nararouter]
 host = "https://router.bynara.id"
+free_only = true
 
 [intelligence]
 default_model = "qwen3:4b"
