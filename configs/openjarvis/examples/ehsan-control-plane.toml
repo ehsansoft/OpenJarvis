@@ -65,6 +65,17 @@ enabled = true
 # feed benchmarked routing and skill improvements.
 enabled = false
 
+[speech]
+backend = "auto"
+model = "base"
+language = ""
+device = "auto"
+compute_type = "int8"
+
+[tools.mcp]
+enabled = true
+servers = '[{"name":"voicebox","url":"http://127.0.0.1:17493/mcp"}]'
+
 [server]
 host = "127.0.0.1"
 port = 8000
