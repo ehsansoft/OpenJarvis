@@ -1080,7 +1080,7 @@ def scan_machine_inventory(
     package_caches = detect_package_caches()
     hardware = detect_hardware()
     return MachineInventory(
-        schema_version=1,
+        schema_version=2,
         generated_at=datetime.now(timezone.utc).isoformat(),
         hostname=socket.gethostname(),
         platform=platform.system(),
