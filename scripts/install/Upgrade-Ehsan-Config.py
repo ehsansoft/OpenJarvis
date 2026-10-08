@@ -12,7 +12,7 @@ import tomlkit
 
 VOICEBOX_MCP = {
     "name": "voicebox",
-    "url": "http://127.0.0.1:17493/mcp",
+    "url": "http://127.0.0.1:17493/mcp/",
     "headers": {"X-Voicebox-Client-Id": "openjarvis"},
 }
 
@@ -49,7 +49,7 @@ def _merge_voicebox_mcp(mcp: Any) -> str:
             continue
         if (
             item.get("name") == "voicebox"
-            or item.get("url") == VOICEBOX_MCP["url"]
+            or str(item.get("url") or "").rstrip("/") == VOICEBOX_MCP["url"].rstrip("/")
         ):
             item["name"] = "voicebox"
             item["url"] = VOICEBOX_MCP["url"]
