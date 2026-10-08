@@ -63,6 +63,46 @@ For coding clients such as OpenCode or Kilo Code, choose model free/code.
 For long-context research, choose free/research. For private or sensitive code,
 prefer a concrete local model or configure policy to disallow remote candidates.
 
+## Developer machine inventory
+
+Run:
+
+    jarvis projects machine-scan
+
+This captures the active developer toolchain and its executable locations,
+including Node.js, npm, npx, pnpm, Yarn, Corepack, Bun, Deno, Python, pip, uv,
+PHP, Composer, MySQL/MariaDB clients, Docker, WSL, Ollama, Winget, Chocolatey
+and Scoop when present.
+
+It also queries the configured Ollama API for local model names, digests, sizes,
+families, parameter sizes and quantization levels, and detects common WampServer
+roots plus installed PHP, Apache, MySQL and MariaDB runtime versions.
+
+The daily Windows scan task refreshes this machine inventory together with the
+project registry and drive inventory.
+
+## Disk hygiene scans
+
+Cleanup discovery is advisory and never deletes files:
+
+    jarvis projects cleanup-scan D:\ --min-age-days 30
+
+It targets generated/cache/build directories and separates low-risk cache
+candidates from review-required folders such as node_modules, vendor, virtual
+environments and build outputs.
+
+Exact duplicate detection is opt-in because it reads candidate file bytes and
+can generate significant disk I/O:
+
+    jarvis projects duplicates D:\ --min-size-mb 1
+
+The duplicate scanner first groups by file size, then uses a first/last sample
+hash, and finally verifies candidates with SHA-256. Dependency trees, build
+outputs and system directories are skipped by default to reduce noise.
+
+Neither hygiene command removes, moves or changes files. Use the report to make
+an explicit cleanup plan first.
+
 ## Whole D-drive inventory
 
 The inventory is metadata-only. It does not read ordinary file contents and it
