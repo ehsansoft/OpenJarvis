@@ -8,8 +8,10 @@ so editor integrations do not need to chase rotating provider model IDs.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import time
+from urllib.parse import urlparse
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -54,9 +56,68 @@ class FreeModelCandidate:
         }
 
 
-def _is_local_engine(engine: InferenceEngine) -> bool:
-    return not bool(getattr(engine, "is_cloud", False))
+_LOCAL_ENGINE_KEYS = frozenset(
+    {
+        "ollama",
+        "llamacpp",
+        "vllm",
+        "sglang",
+        "mlx",
+        "lmstudio",
+        "exo",
+        "nexa",
+        "uzu",
+        "lemonade",
+        "gemma_cpp",
+        "apple_fm",
+        "afm",
+    }
+)
 
+
+def _host_is_local_or_private(raw_host: str) -> bool:
+    try:
+        parsed = urlparse(
+            raw_host if "://" in raw_host else f"http://{raw_host}"
+        )
+        hostname = parsed.hostname or ""
+    except ValueError:
+        return False
+    if hostname.lower() == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+    return (
+        address.is_loopback
+        or address.is_private
+        or address.is_link_local
+    )
+
+
+def _is_zero_api_local_engine(
+    engine_key: str,
+    engine: InferenceEngine,
+) -> bool:
+    """Return true only when an engine is clearly local/private.
+
+    Some engines, notably NVIDIA NIM, inherit is_cloud=False even when
+    their default host is a public SaaS endpoint. The free pool therefore
+    cannot use not-is-cloud as proof of zero API cost.
+    """
+    if bool(getattr(engine, "is_cloud", False)):
+        return False
+
+    raw_host = (
+        getattr(engine, "_host", "")
+        or getattr(engine, "host", "")
+        or ""
+    )
+    if isinstance(raw_host, str) and raw_host.strip():
+        return _host_is_local_or_private(raw_host.strip())
+
+    return engine_key in _LOCAL_ENGINE_KEYS
 
 def _truthy_metadata(metadata: dict[str, Any], *keys: str) -> bool:
     for key in keys:
@@ -179,7 +240,7 @@ def collect_free_models(
     for engine_key, engine in engines:
         if engine_key == "nararouter":
             discovered = _nara_candidates(engine_key, engine)
-        elif _is_local_engine(engine):
+        elif _is_zero_api_local_engine(engine_key, engine):
             try:
                 model_ids = engine.list_models()
             except Exception as exc:
