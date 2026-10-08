@@ -44,7 +44,27 @@ function Ensure-Tool(
 }
 
 $GitExe = Ensure-Tool -Command "git" -WingetId "Git.Git"
-$UvExe = Ensure-Tool -Command "uv" -WingetId "astral-sh.uv"
+
+$uvCommand = Get-Command uv -ErrorAction SilentlyContinue
+if ($uvCommand) {
+    $UvExe = $uvCommand.Source
+} else {
+    try {
+        $UvExe = Ensure-Tool -Command "uv" -WingetId "astral-sh.uv"
+    } catch {
+        Write-Host "Winget uv install failed; trying Astral official installer..." -ForegroundColor Yellow
+        Invoke-RestMethod -Uri "https://astral.sh/uv/install.ps1" | Invoke-Expression
+        $uvDir = Join-Path $env:USERPROFILE ".local\bin"
+        if (Test-Path (Join-Path $uvDir "uv.exe")) {
+            $env:Path = "$uvDir;$env:Path"
+        }
+        $uvCommand = Get-Command uv -ErrorAction SilentlyContinue
+        if (-not $uvCommand) {
+            throw "uv installation failed. Re-open PowerShell and run installer again."
+        }
+        $UvExe = $uvCommand.Source
+    }
+}
 
 New-Item -ItemType Directory -Force -Path (Split-Path $InstallRoot) | Out-Null
 New-Item -ItemType Directory -Force -Path $StateRoot | Out-Null
