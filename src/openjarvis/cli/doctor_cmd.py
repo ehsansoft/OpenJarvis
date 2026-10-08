@@ -369,6 +369,12 @@ _STATUS_ICONS = {
 
 def _run_all_checks() -> List[CheckResult]:
     """Run all diagnostic checks and return results."""
+    # Doctor must see the same persisted provider credentials as normal CLI
+    # commands. Otherwise NaraRouter can look unreachable even when the
+    # saved credential works for model discovery.
+    from openjarvis.core.credentials import inject_credentials
+
+    inject_credentials()
     checks: List[CheckResult] = []
     checks.append(_check_python_version())
     checks.append(_check_config_exists())
