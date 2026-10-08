@@ -130,7 +130,7 @@ class Finalizer:
             return False, {"error": f"{type(exc).__name__}: {exc}"}
 
     def server_smoke(self) -> None:
-        name = "13-server-smoke"
+        name = "12-server-smoke"
         report: dict[str, Any] = {
             "base": "http://127.0.0.1:8000",
             "started_by_finalizer": False,
@@ -145,7 +145,7 @@ class Finalizer:
         log_handle = None
 
         if not ok:
-            log_path = self.run_dir / "13-server-process.txt"
+            log_path = self.run_dir / "12-server-process.txt"
             log_handle = log_path.open("w", encoding="utf-8")
             process = subprocess.Popen(
                 [
@@ -235,7 +235,7 @@ class Finalizer:
                 if path.is_file():
                     shutil.copy2(path, destination / path.name)
                     copied.append(path.name)
-        (self.run_dir / "14-editor-configs.json").write_text(
+        (self.run_dir / "13-editor-configs.json").write_text(
             json.dumps(
                 {
                     "destination": str(destination),
@@ -342,9 +342,39 @@ class Finalizer:
             timeout=1200,
         )
 
+        # Install/update the lightweight daily metadata service requested for
+        # the workstation. This refreshes project, machine and drive inventory;
+        # it intentionally does not hash duplicates or delete anything.
+        self.run(
+            "09-scheduled-scan-install",
+            [
+                self.uv,
+                "run",
+                "jarvis",
+                "projects",
+                "install-scan-task",
+                "--root",
+                "D:\\",
+                "--daily-at",
+                "03:00",
+            ],
+            required=False,
+        )
+        self.run(
+            "10-scheduled-scan-status",
+            [
+                self.uv,
+                "run",
+                "jarvis",
+                "projects",
+                "scan-task-status",
+            ],
+            required=False,
+        )
+
         if self.run_cleanup:
             self.run(
-                "09-cleanup",
+                "11-cleanup",
                 [
                     self.uv,
                     "run",
