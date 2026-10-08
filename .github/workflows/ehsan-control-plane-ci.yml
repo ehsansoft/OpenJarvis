@@ -62,14 +62,16 @@ jobs:
           Copy-Item scripts\install\First-Run-Scan.ps1 dist\ehsan-installer\
           Copy-Item scripts\install\First-Run-Scan.cmd dist\ehsan-installer\
           Copy-Item scripts\install\Start-Ehsan-OpenJarvis.cmd dist\ehsan-installer\
+          Copy-Item scripts\install\Repair-Ehsan-OpenJarvis.ps1 dist\ehsan-installer\
+          Copy-Item scripts\install\Repair-Ehsan-OpenJarvis.cmd dist\ehsan-installer\
           Copy-Item scripts\install\README-EHSAN-WINDOWS.md dist\ehsan-installer\
           Copy-Item scripts\install\installer-manifest.json dist\ehsan-installer\
-          Compress-Archive -Path dist\ehsan-installer\* -DestinationPath dist\OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.1.zip
+          Compress-Archive -Path dist\ehsan-installer\* -DestinationPath dist\OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.2.zip
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.1
-          path: dist/OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.1.zip
+          name: OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.2
+          path: dist/OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.2.zip
           if-no-files-found: error
           retention-days: 14
