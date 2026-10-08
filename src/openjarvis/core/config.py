@@ -1164,8 +1164,25 @@ class ProjectsConfig:
             get_data_dir() / "registry" / "drive-inventory.json"
         )
     )
+    machine_inventory_path: str = field(
+        default_factory=lambda: str(
+            get_data_dir() / "registry" / "machine-inventory.json"
+        )
+    )
+    cleanup_report_path: str = field(
+        default_factory=lambda: str(
+            get_data_dir() / "registry" / "cleanup-report.json"
+        )
+    )
+    duplicate_report_path: str = field(
+        default_factory=lambda: str(
+            get_data_dir() / "registry" / "duplicate-report.json"
+        )
+    )
     max_depth: int = 4
     inventory_max_files: int = 2_000_000
+    duplicate_min_size_mb: int = 1
+    cleanup_min_age_days: int = 30
 
 
 @dataclass
