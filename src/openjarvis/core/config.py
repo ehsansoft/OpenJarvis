@@ -1183,6 +1183,7 @@ class ProjectsConfig:
     inventory_max_files: int = 2_000_000
     duplicate_min_size_mb: int = 1
     cleanup_min_age_days: int = 30
+    voicebox_host: str = "http://127.0.0.1:17493"
 
 
 @dataclass
