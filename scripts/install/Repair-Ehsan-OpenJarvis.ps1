@@ -61,16 +61,18 @@ Push-Location $InstallRoot
 try {
     Run-Capture "01-git-update" {
         & $git fetch origin
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
         & $git switch $Branch
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
         & $git pull --ff-only origin $Branch
+        if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
     } | Out-Null
 
     Run-Capture "02-uv-sync" {
         & $uv python install 3.13
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if ($LASTEXITCODE -ne 0) { throw "uv python install failed" }
         & $uv sync --python 3.13 --extra dev --extra server --extra desktop
+        if ($LASTEXITCODE -ne 0) { throw "uv sync failed" }
     } | Out-Null
 
     $config = Join-Path $StateRoot "config.toml"
