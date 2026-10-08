@@ -71,6 +71,7 @@ Each server object supports the following fields:
 | `args`           | list of strings| No       | Arguments passed to the stdio command.                   |
 | `include_tools`  | list of strings| No       | Whitelist of tool names to import. Only these tools are loaded. |
 | `exclude_tools`  | list of strings| No       | Blacklist of tool names to skip. All other tools are loaded. |
+| `headers`        | object         | No       | Extra HTTP headers sent to a Streamable HTTP server. Useful for non-secret client identifiers such as `X-Voicebox-Client-Id`. |
 
 *Either `url` or `command` must be provided. If neither is set, the server is skipped with a warning.
 
