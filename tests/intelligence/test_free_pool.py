@@ -85,6 +85,7 @@ def test_private_self_hosted_nim_can_join_local_pool() -> None:
     assert [item.model_id for item in candidates] == ["self-hosted/model"]
     assert candidates[0].local is True
 
+
 def test_collects_only_explicit_nara_free_models() -> None:
     nara = _FakeEngine(
         ["paid-model", "nemotron-3-super-free"],
@@ -124,6 +125,31 @@ def test_local_first_beats_remote_specialist_by_default() -> None:
     )
     ranked = rank_free_models(candidates, "code", prefer_local=True)
     assert ranked[0].engine_key == "ollama"
+
+
+def test_research_alias_prefers_free_long_context_remote() -> None:
+    local = _FakeEngine(["qwen2.5-coder:7b"])
+    remote = _FakeEngine(
+        ["nemotron-long-free"],
+        is_cloud=True,
+        free_ids=["nemotron-long-free"],
+        metadata=[
+            {
+                "id": "nemotron-long-free",
+                "context_window": 1_000_000,
+                "reasoning": True,
+            }
+        ],
+    )
+    pool = FreePoolEngine(
+        [("ollama", local), ("nararouter", remote)],
+        prefer_local=True,
+    )
+
+    result = pool.generate([], model="free/research")
+
+    assert result["routing"]["selected_engine"] == "nararouter"
+    assert result["routing"]["selected_model"] == "nemotron-long-free"
 
 
 def test_code_routing_prefers_local_coder() -> None:
