@@ -1103,6 +1103,23 @@ async def _handle_stream(
     )
 
 
+@router.get("/router/v1")
+async def router_index(request: Request) -> dict[str, Any]:
+    """Human-friendly discovery document for editor clients."""
+    return {
+        "service": "OpenJarvis editor router",
+        "status": "ok",
+        "model": getattr(request.app.state, "model", ""),
+        "endpoints": {
+            "models": "/router/v1/models",
+            "chat_completions": "/router/v1/chat/completions",
+            "health": "/health",
+            "docs": "/docs",
+        },
+        "recommended_model_alias": "free/code",
+    }
+
+
 @router.post("/router/v1/chat/completions")
 async def router_chat_completions(
     request_body: ChatCompletionRequest,
