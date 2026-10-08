@@ -1,6 +1,6 @@
 # Ehsan OpenJarvis Windows Test Installer
 
-Version: 0.1.0-alpha.1
+Version: 0.1.0-alpha.2
 
 This installer targets the development branch:
 
@@ -24,6 +24,8 @@ Default layout:
 
 The installer does not modify WampServer, Ollama models, projects, or user files.
 
+If alpha.1 was already installed, run `Repair-Ehsan-OpenJarvis.cmd`. It updates the branch, repairs the Windows PowerShell UTF-8 BOM issue in `config.toml`, keeps a backup, re-syncs dependencies, and runs Doctor + machine/model checks.
+
 ## Enable NaraRouter free models
 
 Open PowerShell:
@@ -41,6 +43,8 @@ The API key is stored in OpenJarvis' local credential store and is not committed
 Run `First-Run-Scan.cmd`.
 
 It collects:
+
+- config encoding/hash diagnostics (not config contents)
 
 - OpenJarvis doctor output
 - free local/Nara model pool
