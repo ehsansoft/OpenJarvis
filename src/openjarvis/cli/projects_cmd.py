@@ -13,12 +13,12 @@ import click
 from openjarvis.core.config import load_config
 from openjarvis.core.paths import get_config_dir
 from openjarvis.projects import (
+    detect_voicebox,
     discover_projects,
     load_registry,
     scan_cleanup_candidates,
     scan_drive_inventory,
     scan_duplicate_files,
-    detect_voicebox,
     scan_machine_inventory,
     write_cleanup_report,
     write_duplicate_report,
