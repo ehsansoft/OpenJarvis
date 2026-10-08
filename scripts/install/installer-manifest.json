@@ -1,6 +1,6 @@
 {
   "name": "Ehsan OpenJarvis Control Plane",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "branch": "feature/ehsan-control-plane-foundation",
   "repo": "https://github.com/ehsansoft/OpenJarvis.git",
   "defaults": {
@@ -8,12 +8,14 @@
     "state_root": "D:\\AI-Control\\OpenJarvis",
     "projects_root": "D:\\Projects",
     "inventory_root": "D:\\",
-    "wamp_root": "C:\\wamp64"
+    "wamp_root": "C:\\wamp64",
+    "voicebox_host": "http://127.0.0.1:17493"
   },
   "entrypoints": {
     "install": "Install-Ehsan-OpenJarvis.cmd",
     "first_run": "First-Run-Scan.cmd",
     "start": "Start-Ehsan-OpenJarvis.cmd",
-    "repair": "Repair-Ehsan-OpenJarvis.cmd"
+    "repair": "Repair-Ehsan-OpenJarvis.cmd",
+    "voicebox_probe": "Voicebox-Probe.cmd"
   }
 }
