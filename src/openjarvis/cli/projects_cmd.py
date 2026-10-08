@@ -262,7 +262,14 @@ def machine_scan(output_path: Path | None, as_json: bool) -> None:
         output_path = Path(project_config.machine_inventory_path).expanduser()
 
     host = config.engine.ollama.host or os.environ.get("OLLAMA_HOST", "")
-    result = scan_machine_inventory(host)
+    voicebox_host = (
+        project_config.voicebox_host
+        or os.environ.get("VOICEBOX_HOST", "")
+    )
+    result = scan_machine_inventory(
+        host,
+        voicebox_host=voicebox_host,
+    )
     write_machine_inventory(result, output_path)
 
     if as_json:
@@ -280,6 +287,29 @@ def machine_scan(output_path: Path | None, as_json: bool) -> None:
             else "not reachable"
         )
     )
+    voicebox = result.voicebox
+    click.echo(
+        "Voicebox: "
+        + (
+            f"{voicebox.get('downloaded_count', 0)} downloaded / "
+            f"{voicebox.get('loaded_count', 0)} loaded model(s)"
+            if voicebox.get("reachable")
+            else "not reachable"
+        )
+    )
+    if voicebox.get("reachable"):
+        for model in voicebox.get("models", []):
+            if model.get("downloaded") or model.get("loaded"):
+                state = []
+                if model.get("downloaded"):
+                    state.append("downloaded")
+                if model.get("loaded"):
+                    state.append("loaded")
+                click.echo(
+                    f"  - {model.get('display_name') or model.get('model_name')}: "
+                    + ", ".join(state)
+                )
+
     wamp = result.wampserver
     click.echo(
         f"WampServer: {'detected' if wamp.get('detected') else 'not detected'}"
