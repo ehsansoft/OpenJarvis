@@ -11,27 +11,53 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-function Require-Command([string]$Name) {
-    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "Required command not found: $Name"
-    }
+function Refresh-Path {
+    $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $user = [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = [Environment]::ExpandEnvironmentVariables("$machine;$user")
 }
 
-Require-Command git
-Require-Command uv
+function Ensure-Tool(
+    [string]$Command,
+    [string]$WingetId
+) {
+    $existing = Get-Command $Command -ErrorAction SilentlyContinue
+    if ($existing) { return $existing.Source }
+
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        throw "$Command is required. Install $WingetId and run again."
+    }
+
+    Write-Host "Installing $WingetId with winget..." -ForegroundColor Cyan
+    & winget install --id $WingetId --silent --accept-source-agreements --accept-package-agreements
+    if ($LASTEXITCODE -ne 0) {
+        throw "winget failed to install $WingetId."
+    }
+    Refresh-Path
+
+    $resolved = Get-Command $Command -ErrorAction SilentlyContinue
+    if (-not $resolved) {
+        throw "$WingetId installed but $Command is not visible yet. Re-open PowerShell."
+    }
+    return $resolved.Source
+}
+
+$GitExe = Ensure-Tool -Command "git" -WingetId "Git.Git"
+$UvExe = Ensure-Tool -Command "uv" -WingetId "astral-sh.uv"
 
 New-Item -ItemType Directory -Force -Path (Split-Path $InstallRoot) | Out-Null
 New-Item -ItemType Directory -Force -Path $StateRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $ProjectsRoot | Out-Null
 
 if (-not (Test-Path (Join-Path $InstallRoot ".git"))) {
-    git clone --branch $Branch --single-branch $RepoUrl $InstallRoot
+    & $GitExe clone --branch $Branch --single-branch $RepoUrl $InstallRoot
 } else {
     Push-Location $InstallRoot
     try {
-        git fetch origin
-        git switch $Branch
-        git pull --ff-only origin $Branch
+        & $GitExe fetch origin
+        & $GitExe switch $Branch
+        & $GitExe pull --ff-only origin $Branch
     } finally {
         Pop-Location
     }
@@ -42,7 +68,15 @@ $env:OPENJARVIS_HOME = $StateRoot
 
 Push-Location $InstallRoot
 try {
-    uv sync --extra dev --extra server --extra desktop
+    & $UvExe python install 3.13
+    if ($LASTEXITCODE -ne 0) {
+        throw "uv could not install/manage Python 3.13."
+    }
+
+    & $UvExe sync --python 3.13 --extra dev --extra server --extra desktop
+    if ($LASTEXITCODE -ne 0) {
+        throw "uv sync failed."
+    }
 
     $ConfigPath = Join-Path $StateRoot "config.toml"
     if (-not (Test-Path $ConfigPath)) {
@@ -73,16 +107,16 @@ try {
         Set-Content -Path $ConfigPath -Value $Text -Encoding utf8
     }
 
-    uv run jarvis projects scan $ProjectsRoot --max-depth 5
-    uv run jarvis projects machine-scan
-    uv run jarvis model free
+    & $UvExe run jarvis projects scan $ProjectsRoot --max-depth 5
+    & $UvExe run jarvis projects machine-scan
+    & $UvExe run jarvis model free
 
     if ($InitialInventory) {
-        uv run jarvis projects inventory $InventoryRoot
+        & $UvExe run jarvis projects inventory $InventoryRoot
     }
 
     if ($InstallScanTask) {
-        uv run jarvis projects install-scan-task --root $InventoryRoot --daily-at 03:00
+        & $UvExe run jarvis projects install-scan-task --root $InventoryRoot --daily-at 03:00
     }
 
     Write-Host ""
@@ -92,9 +126,9 @@ try {
     Write-Host "Projects:     $ProjectsRoot"
     Write-Host ""
     Write-Host "To enable rotating NaraRouter free models securely:"
-    Write-Host "  uv run jarvis model nara-key"
-    Write-Host "Then run: uv run jarvis model free"
-    Write-Host "Start API: uv run jarvis start"
+    Write-Host "  & $UvExe run jarvis model nara-key"
+    Write-Host "Then run: & $UvExe run jarvis model free"
+    Write-Host "Start API: & $UvExe run jarvis start"
     Write-Host "Personal API: http://127.0.0.1:8000/v1"
     Write-Host "Editor API:   http://127.0.0.1:8000/router/v1"
     Write-Host "Editor model alias: free/code"
