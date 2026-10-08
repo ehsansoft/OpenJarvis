@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 
-VERSION = "0.1.0-alpha.4.2"
+VERSION = "0.1.0-alpha.4.3"
 
 
 def _stamp() -> str:
@@ -44,7 +44,7 @@ class Finalizer:
         self.projects = projects
         self.run_cleanup = run_cleanup
         self.support_root = state / "support"
-        self.run_dir = self.support_root / f"finalize-alpha4.2-{_stamp()}"
+        self.run_dir = self.support_root / f"finalize-alpha4.3-{_stamp()}"
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.env = os.environ.copy()
         self.env["OPENJARVIS_HOME"] = str(state)
@@ -283,6 +283,8 @@ class Finalizer:
                 "tests/speech/test_discovery.py",
                 "tests/mcp/test_transport.py",
                 "tests/mcp/test_loader.py",
+                "tests/security/test_rate_limiter.py",
+                "tests/server/test_routes.py",
                 "-q",
             ],
             timeout=1200,
@@ -410,7 +412,7 @@ class Finalizer:
 
         zip_path = (
             self.support_root
-            / f"openjarvis-finalize-alpha4.2-{_stamp()}.zip"
+            / f"openjarvis-finalize-alpha4.3-{_stamp()}.zip"
         )
         with zipfile.ZipFile(
             zip_path,
