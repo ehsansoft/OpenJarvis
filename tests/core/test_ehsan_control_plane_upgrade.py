@@ -57,7 +57,7 @@ def test_upgrade_adds_voicebox_security_and_privacy(tmp_path: Path) -> None:
 
     servers = json.loads(data["tools"]["mcp"]["servers"])
     voicebox = next(item for item in servers if item["name"] == "voicebox")
-    assert voicebox["url"] == "http://127.0.0.1:17493/mcp"
+    assert voicebox["url"] == "http://127.0.0.1:17493/mcp/"
     assert (
         voicebox["headers"]["X-Voicebox-Client-Id"]
         == "openjarvis"
