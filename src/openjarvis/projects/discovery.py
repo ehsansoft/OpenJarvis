@@ -81,10 +81,59 @@ class ProjectRecord:
     frameworks: list[str]
     markers: list[str]
     git: dict[str, Any]
+    role: str = "active"
+    collection: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation."""
         return asdict(self)
+
+
+_REFERENCE_SEGMENTS = frozenset(
+    {
+        "github-rep",
+        "repos",
+        "references",
+        "reference",
+        "examples",
+        "samples",
+        "templates",
+        "templates-use",
+        "clones",
+    }
+)
+
+_ARCHIVE_HINTS = (
+    "backup",
+    "archive",
+    "snapshot",
+    "stale",
+    "deprecated",
+    "old-copy",
+    "copy-old",
+)
+
+
+def _classify_role(path: Path, base: Path) -> tuple[str, str]:
+    """Classify a discovered root without hiding it from the registry.
+
+    The user's D:\Projects contains reference repositories, templates and
+    archived copies alongside active work. Keeping all of them searchable is
+    useful, but counting every reference repo as an active project is not.
+    """
+    try:
+        parts = list(path.relative_to(base).parts)
+    except ValueError:
+        parts = list(path.parts)
+    lowered = [part.lower() for part in parts]
+
+    for index, part in enumerate(lowered):
+        if part in _REFERENCE_SEGMENTS:
+            return "reference", parts[index]
+        if any(hint in part for hint in _ARCHIVE_HINTS):
+            return "archive", parts[index]
+
+    return "active", ""
 
 
 def _slugify(value: str) -> str:
@@ -294,6 +343,7 @@ def discover_projects(
 
         canonical_roots.append(resolved)
         relative = path.relative_to(base).as_posix()
+        role, collection = _classify_role(path, base)
         records.append(
             ProjectRecord(
                 project_id=_slugify(relative),
@@ -304,6 +354,8 @@ def discover_projects(
                 frameworks=frameworks,
                 markers=sorted(markers),
                 git=_read_git_metadata(path),
+                role=role,
+                collection=collection,
             )
         )
 
@@ -321,7 +373,7 @@ def write_registry(
     target = Path(path).expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "root": str(Path(root).expanduser().resolve()) if root else "",
         "projects": [record.to_dict() for record in records],
