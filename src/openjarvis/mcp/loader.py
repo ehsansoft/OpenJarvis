@@ -86,11 +86,26 @@ def load_mcp_tools_from_config(
             name = cfg.get("name", "<unnamed>")
             url = cfg.get("url")
             token = cfg.get("token")
+            headers = cfg.get("headers")
             command = cfg.get("command", "")
             args = cfg.get("args", [])
 
             if url:
-                transport = StreamableHTTPTransport(url=url, token=token)
+                if headers:
+                    if not isinstance(headers, dict):
+                        raise ValueError(
+                            f"MCP server '{name}' headers must be an object"
+                        )
+                    transport = StreamableHTTPTransport(
+                        url=url,
+                        token=token,
+                        headers={
+                            str(key): str(value)
+                            for key, value in headers.items()
+                        },
+                    )
+                else:
+                    transport = StreamableHTTPTransport(url=url, token=token)
             elif command:
                 transport = StdioTransport(command=[command] + args)
             else:
