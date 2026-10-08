@@ -94,6 +94,14 @@ def upgrade(path: Path) -> list[str]:
         "drive_inventory",
         "machine_inventory",
         "voicebox_status",
+        "voicebox.speak",
+        "voicebox.transcribe",
+        "voicebox.list_captures",
+        "voicebox.list_profiles",
+        "voicebox_speak",
+        "voicebox_transcribe",
+        "voicebox_list_captures",
+        "voicebox_list_profiles",
         "hygiene_report",
     ]
     if enabled is not None and hasattr(enabled, "append"):
