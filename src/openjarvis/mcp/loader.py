@@ -100,8 +100,7 @@ def load_mcp_tools_from_config(
                         url=url,
                         token=token,
                         headers={
-                            str(key): str(value)
-                            for key, value in headers.items()
+                            str(key): str(value) for key, value in headers.items()
                         },
                     )
                 else:

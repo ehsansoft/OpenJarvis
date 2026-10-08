@@ -101,9 +101,7 @@ class TestLoaderTokenPlumbing:
             token="ha-llat-secret",
         )
 
-    def test_custom_headers_passed_to_streamable_http(
-        self, _mock_mcp_stack
-    ):
+    def test_custom_headers_passed_to_streamable_http(self, _mock_mcp_stack):
         from openjarvis.mcp.loader import load_mcp_tools_from_config
 
         cfg = _make_mcp_cfg(

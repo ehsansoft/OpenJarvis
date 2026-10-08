@@ -251,7 +251,7 @@ def detect_hardware() -> dict[str, Any]:
             result["nvidia"] = parsed
 
     disks = _powershell_json(
-        "Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=3\" | "
+        'Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | '
         "Select-Object DeviceID,VolumeName,FileSystem,Size,FreeSpace | "
         "ConvertTo-Json -Compress"
     )
@@ -288,11 +288,9 @@ def detect_runtime_managers() -> dict[str, Any]:
         output = _run_full(locations[0], args)
         managers[name] = {
             "executable": locations[0],
-            "installed": [
-                line.strip()
-                for line in output.splitlines()
-                if line.strip()
-            ][:100],
+            "installed": [line.strip() for line in output.splitlines() if line.strip()][
+                :100
+            ],
         }
     return managers
 
@@ -321,7 +319,8 @@ def detect_package_caches() -> list[dict[str, Any]]:
             not first
             or first.lower().startswith("in ")
             or "error" in first.lower()
-            or ":" in first and not Path(first).drive
+            or ":" in first
+            and not Path(first).drive
         ):
             continue
         path = Path(first).expanduser()
@@ -359,9 +358,7 @@ def detect_toolchain() -> list[ToolInstallation]:
 
 def _normalize_voicebox_host(host: str) -> str:
     value = (
-        host
-        or os.environ.get("VOICEBOX_HOST", "")
-        or "http://127.0.0.1:17493"
+        host or os.environ.get("VOICEBOX_HOST", "") or "http://127.0.0.1:17493"
     ).strip()
     return value.rstrip("/")
 
@@ -589,13 +586,9 @@ def detect_voicebox(
                 record[key] = item[key]
         models.append(record)
 
-    downloaded = [
-        item for item in models if bool(item.get("downloaded"))
-    ]
+    downloaded = [item for item in models if bool(item.get("downloaded"))]
     loaded = [item for item in models if bool(item.get("loaded"))]
-    available = [
-        item for item in models if bool(item.get("available"))
-    ]
+    available = [item for item in models if bool(item.get("available"))]
     inconsistencies = [
         {
             "model_name": item["model_name"],
@@ -608,8 +601,7 @@ def detect_voicebox(
     ]
     listeners = result.get("listeners", [])
     result["exposed_all_interfaces"] = any(
-        str(item.get("LocalAddress", "")) in {"0.0.0.0", "::"}
-        for item in listeners
+        str(item.get("LocalAddress", "")) in {"0.0.0.0", "::"} for item in listeners
     )
     result["models"] = models
     result["model_count"] = len(models)
@@ -790,9 +782,7 @@ def _wamp_virtual_hosts(root: Path) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
-    for path in sorted(
-        root.glob("bin/apache/apache*/conf/extra/httpd-vhosts.conf")
-    ):
+    for path in sorted(root.glob("bin/apache/apache*/conf/extra/httpd-vhosts.conf")):
         text = _read_small_text(path, limit=2 * 1024 * 1024)
         for block in re.findall(
             r"(?is)<VirtualHost\b[^>]*>(.*?)</VirtualHost>",
@@ -809,9 +799,7 @@ def _wamp_virtual_hosts(root: Path) -> list[dict[str, Any]]:
             )
             server_name = name_match.group(1).strip() if name_match else ""
             document_root = (
-                root_match.group(1).strip().rstrip('"')
-                if root_match
-                else ""
+                root_match.group(1).strip().rstrip('"') if root_match else ""
             )
             if not server_name and not document_root:
                 continue
@@ -824,10 +812,7 @@ def _wamp_virtual_hosts(root: Path) -> list[dict[str, Any]]:
                     "server_name": server_name,
                     "document_root": document_root,
                     "aliases": [
-                        item
-                        for line in aliases
-                        for item in line.split()
-                        if item
+                        item for line in aliases for item in line.split() if item
                     ],
                     "config": str(path),
                 }

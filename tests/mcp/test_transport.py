@@ -568,13 +568,9 @@ class TestStreamableHTTPTransport:
         return mock_response
 
     @patch("httpx.Client")
-    def test_http_transport_follows_mounted_endpoint_redirects(
-        self, mock_client_cls
-    ):
+    def test_http_transport_follows_mounted_endpoint_redirects(self, mock_client_cls):
         mock_client_cls.return_value = MagicMock()
-        transport = StreamableHTTPTransport(
-            "http://127.0.0.1:17493/mcp"
-        )
+        transport = StreamableHTTPTransport("http://127.0.0.1:17493/mcp")
         try:
             kwargs = mock_client_cls.call_args.kwargs
             assert kwargs["follow_redirects"] is True
@@ -630,7 +626,6 @@ class TestStreamableHTTPTransport:
         headers = mock_client.post.call_args[1]["headers"]
         assert headers["X-Voicebox-Client-Id"] == "openjarvis"
         assert headers["Content-Type"] == "application/json"
-
 
     @patch("httpx.Client")
     def test_close_closes_client(self, mock_client_cls):

@@ -120,9 +120,7 @@ def test_local_first_beats_remote_specialist_by_default() -> None:
         free_ids=["remote-coder-free"],
         metadata=[{"id": "remote-coder-free"}],
     )
-    candidates = collect_free_models(
-        [("ollama", local), ("nararouter", remote)]
-    )
+    candidates = collect_free_models([("ollama", local), ("nararouter", remote)])
     ranked = rank_free_models(candidates, "code", prefer_local=True)
     assert ranked[0].engine_key == "ollama"
 

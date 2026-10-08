@@ -115,7 +115,7 @@ _ARCHIVE_HINTS = (
 
 
 def _classify_role(path: Path, base: Path) -> tuple[str, str]:
-    """Classify a discovered root without hiding it from the registry.
+    r"""Classify a discovered root without hiding it from the registry.
 
     The user's D:\Projects contains reference repositories, templates and
     archived copies alongside active work. Keeping all of them searchable is
@@ -327,17 +327,12 @@ def discover_projects(
         # project instead of inflating the project registry with every
         # monorepo app/package. Nested Git repositories and WordPress
         # plugin/theme roots remain first-class projects.
-        nested_under_project = any(
-            root in resolved.parents for root in canonical_roots
-        )
-        independent_nested = (
-            ".git" in markers
-            or project_type in {
-                "wordpress-plugin",
-                "wordpress-theme",
-                "wordpress-site",
-            }
-        )
+        nested_under_project = any(root in resolved.parents for root in canonical_roots)
+        independent_nested = ".git" in markers or project_type in {
+            "wordpress-plugin",
+            "wordpress-theme",
+            "wordpress-site",
+        }
         if nested_under_project and not independent_nested:
             continue
 

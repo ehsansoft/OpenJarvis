@@ -38,8 +38,7 @@ def test_machine_recommends_path_cleanup_for_multiple_node_installs() -> None:
     )
 
     assert any(
-        item["kind"] == "multiple-tool-installations"
-        for item in recommendations
+        item["kind"] == "multiple-tool-installations" for item in recommendations
     )
 
 
@@ -232,9 +231,7 @@ def test_wamp_detection_maps_versions_vhosts_and_wordpress(
     conf = root / "wampmanager.conf"
     conf.parent.mkdir(parents=True)
     conf.write_text(
-        'phpVersion = "8.3.1"\n'
-        'apacheVersion = "2.4.62"\n'
-        'mysqlVersion = "8.0.40"\n',
+        'phpVersion = "8.3.1"\napacheVersion = "2.4.62"\nmysqlVersion = "8.0.40"\n',
         encoding="utf-8",
     )
 
@@ -289,14 +286,7 @@ def test_wamp_detection_maps_versions_vhosts_and_wordpress(
 def test_wamp_detection_finds_runtime_components(tmp_path: Path) -> None:
     root = tmp_path / "wamp64"
     php = root / "bin" / "php" / "php8.3.1" / "php.exe"
-    apache = (
-        root
-        / "bin"
-        / "apache"
-        / "apache2.4.62"
-        / "bin"
-        / "httpd.exe"
-    )
+    apache = root / "bin" / "apache" / "apache2.4.62" / "bin" / "httpd.exe"
     php.parent.mkdir(parents=True)
     apache.parent.mkdir(parents=True)
     php.write_bytes(b"")

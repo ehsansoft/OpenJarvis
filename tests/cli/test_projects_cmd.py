@@ -31,6 +31,7 @@ def test_scan_writes_registry(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "Discovered 1 project(s)" in result.output
+    assert "1 active, 0 reference, 0 archive" in result.output
     assert registry.exists()
 
 

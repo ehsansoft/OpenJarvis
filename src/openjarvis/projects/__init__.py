@@ -6,27 +6,6 @@ from openjarvis.projects.discovery import (
     load_registry,
     write_registry,
 )
-
-from openjarvis.projects.inventory import (
-    DriveInventory,
-    analyze_inventory,
-    scan_drive_inventory,
-    write_inventory,
-)
-
-
-from openjarvis.projects.machine_inventory import (
-    MachineInventory,
-    detect_hardware,
-    detect_ollama,
-    detect_voicebox,
-    detect_package_caches,
-    detect_runtime_managers,
-    detect_toolchain,
-    detect_wampserver,
-    scan_machine_inventory,
-    write_machine_inventory,
-)
 from openjarvis.projects.hygiene import (
     CleanupReport,
     DuplicateReport,
@@ -34,6 +13,24 @@ from openjarvis.projects.hygiene import (
     scan_duplicate_files,
     write_cleanup_report,
     write_duplicate_report,
+)
+from openjarvis.projects.inventory import (
+    DriveInventory,
+    analyze_inventory,
+    scan_drive_inventory,
+    write_inventory,
+)
+from openjarvis.projects.machine_inventory import (
+    MachineInventory,
+    detect_hardware,
+    detect_ollama,
+    detect_package_caches,
+    detect_runtime_managers,
+    detect_toolchain,
+    detect_voicebox,
+    detect_wampserver,
+    scan_machine_inventory,
+    write_machine_inventory,
 )
 
 __all__ = [

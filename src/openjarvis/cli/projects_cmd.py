@@ -146,7 +146,7 @@ def scan_projects(
         return
 
     click.echo(
-        f"Discovered {len(records)} roots under {root_path}: "
+        f"Discovered {len(records)} project(s) under {root_path}: "
         f"{role_counts.get('active', 0)} active, "
         f"{role_counts.get('reference', 0)} reference, "
         f"{role_counts.get('archive', 0)} archive"
@@ -176,8 +176,7 @@ def list_projects(registry_path: Path | None, as_json: bool) -> None:
         registry_path = Path(config.projects.registry_path).expanduser()
     if not registry_path.exists():
         raise click.ClickException(
-            f"Project registry not found: {registry_path}. "
-            "Run 'jarvis projects scan'."
+            f"Project registry not found: {registry_path}. Run 'jarvis projects scan'."
         )
 
     registry = load_registry(registry_path)
@@ -224,15 +223,13 @@ def inventory(
     config = load_config()
     project_config = config.projects
     root_path = (
-        root or _default_inventory_root(project_config.inventory_root)
-    ).expanduser().resolve()
+        (root or _default_inventory_root(project_config.inventory_root))
+        .expanduser()
+        .resolve()
+    )
     if output_path is None:
         output_path = Path(project_config.inventory_path).expanduser()
-    limit = (
-        project_config.inventory_max_files
-        if max_files is None
-        else max_files
-    )
+    limit = project_config.inventory_max_files if max_files is None else max_files
 
     result = scan_drive_inventory(root_path, max_files=limit)
     write_inventory(result, output_path)
@@ -254,8 +251,7 @@ def inventory(
         click.echo("\nOrganization recommendations:")
         for item in result.recommendations:
             click.echo(
-                f"- [{item['priority']}] {item['title']}: "
-                f"{item['recommendation']}"
+                f"- [{item['priority']}] {item['title']}: {item['recommendation']}"
             )
 
 
@@ -270,9 +266,7 @@ def voicebox_scan(host: str | None, as_json: bool) -> None:
     """Probe the local Voicebox API and list all model states."""
     config = load_config()
     target = (
-        host
-        or config.projects.voicebox_host
-        or os.environ.get("VOICEBOX_HOST", "")
+        host or config.projects.voicebox_host or os.environ.get("VOICEBOX_HOST", "")
     )
     result = detect_voicebox(target)
 
@@ -284,11 +278,7 @@ def voicebox_scan(host: str | None, as_json: bool) -> None:
     if not result.get("reachable"):
         click.echo(
             "Status: not reachable"
-            + (
-                f" ({result.get('error')})"
-                if result.get("error")
-                else ""
-            )
+            + (f" ({result.get('error')})" if result.get("error") else "")
         )
         raise click.ClickException(
             "Voicebox is not reachable. Start the Voicebox desktop app/backend "
@@ -303,9 +293,7 @@ def voicebox_scan(host: str | None, as_json: bool) -> None:
     )
     click.echo(f"Voice profiles: {result.get('profile_count', 0)}")
     if result.get("exposed_all_interfaces"):
-        click.echo(
-            "WARNING: Voicebox is listening on all network interfaces."
-        )
+        click.echo("WARNING: Voicebox is listening on all network interfaces.")
     for model in result.get("models", []):
         flags = []
         if model.get("downloaded"):
@@ -335,10 +323,7 @@ def machine_scan(output_path: Path | None, as_json: bool) -> None:
         output_path = Path(project_config.machine_inventory_path).expanduser()
 
     host = config.engine.ollama.host or os.environ.get("OLLAMA_HOST", "")
-    voicebox_host = (
-        project_config.voicebox_host
-        or os.environ.get("VOICEBOX_HOST", "")
-    )
+    voicebox_host = project_config.voicebox_host or os.environ.get("VOICEBOX_HOST", "")
     result = scan_machine_inventory(
         host,
         voicebox_host=voicebox_host,
@@ -384,9 +369,7 @@ def machine_scan(output_path: Path | None, as_json: bool) -> None:
                 )
 
     wamp = result.wampserver
-    click.echo(
-        f"WampServer: {'detected' if wamp.get('detected') else 'not detected'}"
-    )
+    click.echo(f"WampServer: {'detected' if wamp.get('detected') else 'not detected'}")
     for item in result.recommendations:
         click.echo(f"- [{item['priority']}] {item['title']}")
 
@@ -415,13 +398,11 @@ def cleanup_scan(
     config = load_config()
     project_config = config.projects
     root_path = (
-        root or _default_inventory_root(project_config.inventory_root)
-    ).expanduser().resolve()
-    age = (
-        project_config.cleanup_min_age_days
-        if min_age_days is None
-        else min_age_days
+        (root or _default_inventory_root(project_config.inventory_root))
+        .expanduser()
+        .resolve()
     )
+    age = project_config.cleanup_min_age_days if min_age_days is None else min_age_days
     if output_path is None:
         output_path = Path(project_config.cleanup_report_path).expanduser()
 
@@ -440,9 +421,7 @@ def cleanup_scan(
     )
     click.echo(f"Directories scanned: {result.directories_scanned:,}")
     if result.truncated:
-        click.echo(
-            "Report list is capped; total size/count include all matches."
-        )
+        click.echo("Report list is capped; total size/count include all matches.")
     click.echo(f"Report: {output_path.resolve()}")
     for item in result.candidates[:25]:
         click.echo(
@@ -477,12 +456,12 @@ def duplicates(
     config = load_config()
     project_config = config.projects
     root_path = (
-        root or _default_inventory_root(project_config.inventory_root)
-    ).expanduser().resolve()
+        (root or _default_inventory_root(project_config.inventory_root))
+        .expanduser()
+        .resolve()
+    )
     min_mb = (
-        project_config.duplicate_min_size_mb
-        if min_size_mb is None
-        else min_size_mb
+        project_config.duplicate_min_size_mb if min_size_mb is None else min_size_mb
     )
     if output_path is None:
         output_path = Path(project_config.duplicate_report_path).expanduser()
@@ -544,15 +523,13 @@ def install_scan_task(
     config = load_config()
     project_config = config.projects
     root_path = (
-        root or _default_inventory_root(project_config.inventory_root)
-    ).expanduser().resolve()
+        (root or _default_inventory_root(project_config.inventory_root))
+        .expanduser()
+        .resolve()
+    )
     output = Path(project_config.inventory_path).expanduser().resolve()
     projects_root = _default_root(project_config.root).expanduser().resolve()
-    limit = (
-        project_config.inventory_max_files
-        if max_files is None
-        else max_files
-    )
+    limit = project_config.inventory_max_files if max_files is None else max_files
 
     try:
         hour, minute = daily_at.split(":", 1)
@@ -572,9 +549,7 @@ def install_scan_task(
         output=output,
         max_files=limit,
     )
-    task_cmd = (
-        f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{script}"'
-    )
+    task_cmd = f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{script}"'
     cmd = [
         "schtasks.exe",
         "/Create",

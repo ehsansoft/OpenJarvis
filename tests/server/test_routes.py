@@ -91,10 +91,7 @@ class TestEditorRouterDiscovery:
         assert payload["status"] == "ok"
         assert payload["recommended_model_alias"] == "free/code"
         assert payload["endpoints"]["models"] == "/router/v1/models"
-        assert (
-            payload["endpoints"]["chat_completions"]
-            == "/router/v1/chat/completions"
-        )
+        assert payload["endpoints"]["chat_completions"] == "/router/v1/chat/completions"
 
 
 # ---------------------------------------------------------------------------

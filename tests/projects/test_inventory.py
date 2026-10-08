@@ -26,8 +26,7 @@ def test_inventory_finds_projects_without_reading_contents(tmp_path: Path) -> No
     assert str(app) in result.project_roots
     assert str(outside) in result.project_roots
     assert any(
-        item["kind"] == "project-consolidation"
-        for item in result.recommendations
+        item["kind"] == "project-consolidation" for item in result.recommendations
     )
 
 

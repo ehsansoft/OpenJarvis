@@ -169,3 +169,14 @@ class TestNaraRouterEngine:
         engine = _make_engine("nararouter", config)
         assert isinstance(engine, NaraRouterEngine)
         assert engine._host == "https://custom-router.example"
+
+    def test_discovery_preserves_class_identity_after_registry_clear(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from openjarvis.core.registry import EngineRegistry
+
+        monkeypatch.setenv("NARAROUTER_API_KEY", "nara-test")
+        EngineRegistry.clear()
+        engine = _make_engine("nararouter", JarvisConfig())
+        assert type(engine) is NaraRouterEngine
+        assert EngineRegistry.get("nararouter") is NaraRouterEngine

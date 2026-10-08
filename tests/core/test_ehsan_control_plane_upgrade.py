@@ -31,12 +31,12 @@ def test_upgrade_adds_voicebox_security_and_privacy(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
         '[engine]\ndefault = "ollama"\n\n'
-        '[engine.nararouter]\n'
+        "[engine.nararouter]\n"
         'host = "https://router.bynara.id"\n\n'
-        '[intelligence]\n'
+        "[intelligence]\n"
         'default_model = "qwen3:4b"\n'
         'model_code = "qwen3:4b"\n\n'
-        '[tools]\n'
+        "[tools]\n"
         'enabled = ["file_read"]\n\n'
         '[server]\nhost = "0.0.0.0"\n',
         encoding="utf-8",
@@ -58,10 +58,7 @@ def test_upgrade_adds_voicebox_security_and_privacy(tmp_path: Path) -> None:
     servers = json.loads(data["tools"]["mcp"]["servers"])
     voicebox = next(item for item in servers if item["name"] == "voicebox")
     assert voicebox["url"] == "http://127.0.0.1:17493/mcp/"
-    assert (
-        voicebox["headers"]["X-Voicebox-Client-Id"]
-        == "openjarvis"
-    )
+    assert voicebox["headers"]["X-Voicebox-Client-Id"] == "openjarvis"
     assert "voicebox_status" in data["tools"]["enabled"]
     assert changes
 
@@ -76,9 +73,7 @@ def test_upgrade_preserves_existing_mcp_servers(tmp_path: Path) -> None:
         }
     ]
     path.write_text(
-        "[tools.mcp]\n"
-        "enabled = true\n"
-        f"servers = '{json.dumps(existing)}'\n",
+        f"[tools.mcp]\nenabled = true\nservers = '{json.dumps(existing)}'\n",
         encoding="utf-8",
     )
 

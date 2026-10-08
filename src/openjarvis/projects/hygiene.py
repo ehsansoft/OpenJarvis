@@ -19,7 +19,6 @@ from typing import Any, Iterable
 
 from openjarvis.projects.inventory import _is_link_or_junction
 
-
 _SYSTEM_SKIP_NAMES = frozenset(
     {
         "$RECYCLE.BIN",
@@ -63,18 +62,22 @@ _REVIEW_CLEANUP_NAMES = frozenset(
     }
 )
 
-_DUPLICATE_SKIP_NAMES = _SYSTEM_SKIP_NAMES | _LOW_RISK_CLEANUP_NAMES | frozenset(
-    {
-        "node_modules",
-        "vendor",
-        ".venv",
-        "venv",
-        "dist",
-        "build",
-        "target",
-        ".next",
-        ".nuxt",
-    }
+_DUPLICATE_SKIP_NAMES = (
+    _SYSTEM_SKIP_NAMES
+    | _LOW_RISK_CLEANUP_NAMES
+    | frozenset(
+        {
+            "node_modules",
+            "vendor",
+            ".venv",
+            "venv",
+            "dist",
+            "build",
+            "target",
+            ".next",
+            ".nuxt",
+        }
+    )
 )
 
 
@@ -298,6 +301,7 @@ def scan_cleanup_candidates(
         candidates=[item.to_dict() for item in candidates],
         errors=errors,
     )
+
 
 def _sample_hash(path: Path, size: int, *, chunk_size: int = 1024 * 1024) -> str:
     digest = hashlib.blake2b(digest_size=16)

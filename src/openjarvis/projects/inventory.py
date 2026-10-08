@@ -16,16 +16,41 @@ from pathlib import Path
 from typing import Any, Iterable
 
 _PROJECT_MARKERS = {
-    ".git", "pyproject.toml", "package.json", "composer.json",
-    "Cargo.toml", "go.mod", "wp-config.php",
+    ".git",
+    "pyproject.toml",
+    "package.json",
+    "composer.json",
+    "Cargo.toml",
+    "go.mod",
+    "wp-config.php",
 }
 
-_DEFAULT_IGNORES = frozenset({
-    "$RECYCLE.BIN", "System Volume Information", ".git", ".svn", ".hg",
-    ".venv", "venv", "node_modules", "vendor", "__pycache__",
-    ".pytest_cache", ".mypy_cache", ".ruff_cache", ".next", ".nuxt",
-    "dist", "build", "target", "cache", "caches", "tmp", "temp",
-})
+_DEFAULT_IGNORES = frozenset(
+    {
+        "$RECYCLE.BIN",
+        "System Volume Information",
+        ".git",
+        ".svn",
+        ".hg",
+        ".venv",
+        "venv",
+        "node_modules",
+        "vendor",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".next",
+        ".nuxt",
+        "dist",
+        "build",
+        "target",
+        "cache",
+        "caches",
+        "tmp",
+        "temp",
+    }
+)
 
 _PROJECT_DETECTION_SUPPRESS_NAMES = frozenset(
     {
@@ -45,8 +70,21 @@ _PROJECT_DETECTION_SUPPRESS_NAMES = frozenset(
 )
 
 _CODE_EXTENSIONS = {
-    ".php", ".py", ".js", ".jsx", ".ts", ".tsx", ".rs", ".go",
-    ".java", ".cs", ".cpp", ".c", ".h", ".vue", ".svelte",
+    ".php",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".rs",
+    ".go",
+    ".java",
+    ".cs",
+    ".cpp",
+    ".c",
+    ".h",
+    ".vue",
+    ".svelte",
 }
 _MODEL_EXTENSIONS = {".gguf", ".safetensors", ".onnx", ".pt", ".pth"}
 
@@ -136,8 +174,7 @@ def scan_drive_inventory(
             pass
 
         suppressed_for_projects = any(
-            part.lower() in _PROJECT_DETECTION_SUPPRESS_NAMES
-            for part in relative_parts
+            part.lower() in _PROJECT_DETECTION_SUPPRESS_NAMES for part in relative_parts
         )
         markers = _PROJECT_MARKERS.intersection(names)
         if current != base and markers and not suppressed_for_projects:
@@ -235,66 +272,80 @@ def analyze_inventory(
         except ValueError:
             outside.append(raw)
     if outside:
-        recs.append({
-            "priority": "high",
-            "kind": "project-consolidation",
-            "title": f"{len(outside)} project root(s) are outside {canonical}",
-            "recommendation": (
-                "Review them before consolidating active development. Never move "
-                "automatically because paths, environments, IDEs and deployments "
-                "may depend on the current location."
-            ),
-        })
+        recs.append(
+            {
+                "priority": "high",
+                "kind": "project-consolidation",
+                "title": f"{len(outside)} project root(s) are outside {canonical}",
+                "recommendation": (
+                    "Review them before consolidating active development. Never move "
+                    "automatically because paths, environments, IDEs and deployments "
+                    "may depend on the current location."
+                ),
+            }
+        )
 
     names: dict[str, list[str]] = defaultdict(list)
     for raw in inventory.project_roots:
         names[Path(raw).name.lower()].append(raw)
     duplicates = {k: v for k, v in names.items() if len(v) > 1}
     if duplicates:
-        recs.append({
-            "priority": "high",
-            "kind": "duplicate-project-names",
-            "title": f"{len(duplicates)} repeated project name(s) need review",
-            "recommendation": (
-                "Compare Git remotes, branches and timestamps before deleting or "
-                "archiving any copy."
-            ),
-        })
+        recs.append(
+            {
+                "priority": "high",
+                "kind": "duplicate-project-names",
+                "title": f"{len(duplicates)} repeated project name(s) need review",
+                "recommendation": (
+                    "Compare Git remotes, branches and timestamps before deleting or "
+                    "archiving any copy."
+                ),
+            }
+        )
 
     if inventory.model_file_count:
-        recs.append({
-            "priority": "medium",
-            "kind": "model-storage",
-            "title": f"{inventory.model_file_count} model-weight file(s) observed",
-            "recommendation": (
-                f"Prefer known model/cache roots under {preferred_ai_root} or the "
-                "configured Hugging Face/Ollama stores instead of project copies."
-            ),
-        })
+        recs.append(
+            {
+                "priority": "medium",
+                "kind": "model-storage",
+                "title": f"{inventory.model_file_count} model-weight file(s) observed",
+                "recommendation": (
+                    f"Prefer known model/cache roots under {preferred_ai_root} or the "
+                    "configured Hugging Face/Ollama stores instead of project copies."
+                ),
+            }
+        )
     if inventory.loose_root_files:
-        recs.append({
-            "priority": "medium",
-            "kind": "drive-root-clutter",
-            "title": f"{len(inventory.loose_root_files)} loose root file(s)",
-            "recommendation": (
-                "Review user-owned files for named workspace/archive folders. "
-                "Leave system and installer-managed files where they are."
-            ),
-        })
+        recs.append(
+            {
+                "priority": "medium",
+                "kind": "drive-root-clutter",
+                "title": f"{len(inventory.loose_root_files)} loose root file(s)",
+                "recommendation": (
+                    "Review user-owned files for named workspace/archive folders. "
+                    "Leave system and installer-managed files where they are."
+                ),
+            }
+        )
     if inventory.truncated:
-        recs.append({
-            "priority": "high",
-            "kind": "scan-truncated",
-            "title": "Inventory hit its file limit",
-            "recommendation": "Increase max_files or split the drive into scan roots.",
-        })
+        recs.append(
+            {
+                "priority": "high",
+                "kind": "scan-truncated",
+                "title": "Inventory hit its file limit",
+                "recommendation": (
+                    "Increase max_files or split the drive into scan roots."
+                ),
+            }
+        )
     if not recs:
-        recs.append({
-            "priority": "low",
-            "kind": "healthy-layout",
-            "title": "No obvious layout problems detected",
-            "recommendation": "Keep periodic scans and canonical project roots.",
-        })
+        recs.append(
+            {
+                "priority": "low",
+                "kind": "healthy-layout",
+                "title": "No obvious layout problems detected",
+                "recommendation": "Keep periodic scans and canonical project roots.",
+            }
+        )
     return recs
 
 

@@ -9,7 +9,6 @@ from openjarvis.mcp.client import MCPClient
 from openjarvis.mcp.loader import load_mcp_tools_from_config
 from openjarvis.mcp.transport import StreamableHTTPTransport
 
-
 VOICEBOX_MCP_URL = "http://127.0.0.1:17493/mcp/"
 VOICEBOX_HEADERS = {"X-Voicebox-Client-Id": "openjarvis"}
 EXPECTED = {
@@ -18,6 +17,15 @@ EXPECTED = {
     "voicebox_list_captures",
     "voicebox_list_profiles",
 }
+
+
+def _missing_tools(names: list[str]) -> list[str]:
+    """Accept the native dotted namespace and older underscore tool names."""
+    normalized = {
+        "voicebox_" + name[len("voicebox.") :] if name.startswith("voicebox.") else name
+        for name in names
+    }
+    return sorted(EXPECTED - normalized)
 
 
 def _direct_probe() -> tuple[list[str], str]:
@@ -49,7 +57,7 @@ def main() -> int:
     print("Direct MCP tools:")
     for name in direct_names:
         print(f"  - {name}")
-    missing = sorted(EXPECTED - set(direct_names))
+    missing = _missing_tools(direct_names)
     if missing:
         print("Missing expected direct tools: " + ", ".join(missing))
         print("Initialize response: " + init)
@@ -59,15 +67,13 @@ def main() -> int:
     tools, clients = load_mcp_tools_from_config(config.tools.mcp)
     try:
         configured = sorted(
-            tool.spec.name
-            for tool in tools
-            if "voicebox" in tool.spec.name.lower()
+            tool.spec.name for tool in tools if "voicebox" in tool.spec.name.lower()
         )
         print("Configured OpenJarvis MCP tools:")
         for name in configured:
             print(f"  - {name}")
-        if not EXPECTED.issubset(configured):
-            missing = sorted(EXPECTED - set(configured))
+        missing = _missing_tools(configured)
+        if missing:
             print("Missing configured tools: " + ", ".join(missing))
             return 3
     finally:

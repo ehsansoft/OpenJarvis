@@ -39,9 +39,7 @@ def nara_key() -> None:
     if not value:
         raise click.ClickException("API key cannot be empty.")
     save_credential("nararouter", "NARAROUTER_API_KEY", value)
-    click.echo(
-        "Saved NARAROUTER_API_KEY in the local OpenJarvis credential store."
-    )
+    click.echo("Saved NARAROUTER_API_KEY in the local OpenJarvis credential store.")
 
 
 @model.command("list")
@@ -153,11 +151,7 @@ def free_models(as_json: bool) -> None:
             candidate.engine_key,
             candidate.model_id,
             "yes" if candidate.local else "no",
-            (
-                f"{candidate.context_length:,}"
-                if candidate.context_length
-                else "-"
-            ),
+            (f"{candidate.context_length:,}" if candidate.context_length else "-"),
             ", ".join(sorted(candidate.capabilities)) or "-",
             candidate.reason,
         )

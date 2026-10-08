@@ -95,9 +95,7 @@ class MachineInventoryTool(BaseTool):
                 "platform_release": data.get("platform_release", ""),
                 "tools_detected": len(data.get("tools", [])),
                 "ollama_models": data.get("ollama", {}).get("model_count", 0),
-                "voicebox_reachable": data.get("voicebox", {}).get(
-                    "reachable", False
-                ),
+                "voicebox_reachable": data.get("voicebox", {}).get("reachable", False),
                 "voicebox_downloaded_models": data.get("voicebox", {}).get(
                     "downloaded_count", 0
                 ),

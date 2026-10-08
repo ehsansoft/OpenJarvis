@@ -259,12 +259,16 @@ class NaraRouterEngine(_OpenAICompatibleEngine):
                     _zero(value) for value in top_level_prices
                 )
 
-            discount = str(
-                record.get("discount")
-                or record.get("official_savings")
-                or record.get("savings")
-                or ""
-            ).strip().lower()
+            discount = (
+                str(
+                    record.get("discount")
+                    or record.get("official_savings")
+                    or record.get("savings")
+                    or ""
+                )
+                .strip()
+                .lower()
+            )
             explicit_discount = discount in {
                 "100",
                 "100%",
