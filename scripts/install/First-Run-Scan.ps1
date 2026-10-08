@@ -53,6 +53,11 @@ function Run-Capture(
 
 Run-Capture "01-doctor" @("doctor") | Out-Null
 Run-Capture "02-free-models" @("model", "free", "--json") | Out-Null
+Run-Capture "02a-voicebox-scan" @(
+    "projects", "voicebox-scan",
+    "--host", "http://127.0.0.1:17493",
+    "--json"
+) | Out-Null
 Run-Capture "03-machine-scan" @("projects", "machine-scan", "--json") | Out-Null
 Run-Capture "04-projects" @("projects", "scan", $ProjectsRoot, "--max-depth", "5", "--json") | Out-Null
 Run-Capture "05-drive-inventory" @("projects", "inventory", $InventoryRoot, "--json") | Out-Null
@@ -88,6 +93,25 @@ if (Test-Path $configPath) {
     ) | Set-Content $configDiag -Encoding ASCII
 }
 
+$voiceboxPortPath = Join-Path $runDir "07a-voicebox-port-17493.txt"
+try {
+    $listeners = Get-NetTCPConnection -LocalPort 17493 -State Listen -ErrorAction Stop
+    foreach ($listener in $listeners) {
+        $proc = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+        "Address=$($listener.LocalAddress) Port=$($listener.LocalPort) PID=$($listener.OwningProcess) Process=$($proc.ProcessName) Path=$($proc.Path)" |
+            Add-Content $voiceboxPortPath -Encoding UTF8
+    }
+} catch {
+    "No listener details found for port 17493." | Set-Content $voiceboxPortPath -Encoding UTF8
+}
+
+$voiceboxCache = "D:\AI-Control\caches\huggingface\hub"
+if (Test-Path $voiceboxCache) {
+    Get-ChildItem $voiceboxCache -Directory -ErrorAction SilentlyContinue |
+        Select-Object Name, FullName, LastWriteTime |
+        ConvertTo-Json -Depth 4 |
+        Set-Content (Join-Path $runDir "07b-voicebox-cache-folders.json") -Encoding UTF8
+}
 $systemPath = Join-Path $runDir "08-system-summary.txt"
 Push-Location $InstallRoot
 try {
