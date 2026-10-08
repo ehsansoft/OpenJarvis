@@ -137,10 +137,10 @@ try {
     }
 
     function Run-JarvisChecked {
-        param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Args)
-        & $UvExe run jarvis @Args
+        param([Parameter(ValueFromRemainingArguments=$true)][string[]]$CommandArgs)
+        & $UvExe run jarvis @CommandArgs
         if ($LASTEXITCODE -ne 0) {
-            throw "jarvis command failed: $($Args -join ' ')"
+            throw "jarvis command failed: $($CommandArgs -join ' ')"
         }
     }
     Run-JarvisChecked projects scan $ProjectsRoot --max-depth 5
@@ -160,8 +160,8 @@ try {
     Write-Host "Install root: $InstallRoot"
     Write-Host "State root:   $StateRoot"
     Write-Host "Projects:     $ProjectsRoot"
-    if (Test-Path "C:\\wamp64") {
-        Write-Host "WampServer:   C:\\wamp64 (detected)"
+    if (Test-Path "C:\wamp64") {
+        Write-Host "WampServer:   C:\wamp64 (detected)"
     }
     Write-Host ""
     Write-Host "To enable rotating NaraRouter free models securely:"
