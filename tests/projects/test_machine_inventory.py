@@ -84,6 +84,8 @@ def test_voicebox_detects_registered_and_loaded_models() -> None:
                     },
                 ]
             }
+        if url.endswith("/profiles"):
+            return []
         raise AssertionError(url)
 
     with mock.patch(
@@ -143,6 +145,8 @@ def test_voicebox_infers_engine_category_and_loaded_availability() -> None:
                     },
                 ]
             }
+        if url.endswith("/profiles"):
+            return []
         raise AssertionError(url)
 
     with (
