@@ -27,6 +27,23 @@ _DEFAULT_IGNORES = frozenset({
     "dist", "build", "target", "cache", "caches", "tmp", "temp",
 })
 
+_PROJECT_DETECTION_SUPPRESS_NAMES = frozenset(
+    {
+        ".cvi-cache",
+        ".pnpm-store",
+        ".bun-cache-cvi",
+        "hf-cache",
+        "caches",
+        "node_modules",
+        "vendor",
+        ".venv",
+        "venv",
+        "dist",
+        "build",
+        "target",
+    }
+)
+
 _CODE_EXTENSIONS = {
     ".php", ".py", ".js", ".jsx", ".ts", ".tsx", ".rs", ".go",
     ".java", ".cs", ".cpp", ".c", ".h", ".vue", ".svelte",
@@ -93,6 +110,7 @@ def scan_drive_inventory(
     extensions: Counter[str] = Counter()
     top: dict[str, dict[str, Any]] = {}
     projects: set[str] = set()
+    canonical_projects: list[Path] = []
     errors: list[str] = []
     loose: list[str] = []
     files_seen = directories_seen = bytes_seen = 0
@@ -111,8 +129,26 @@ def scan_drive_inventory(
             continue
 
         names = {entry.name for entry in entries}
-        if current != base and _PROJECT_MARKERS.intersection(names):
-            projects.add(str(current))
+        relative_parts: tuple[str, ...] = ()
+        try:
+            relative_parts = current.relative_to(base).parts
+        except ValueError:
+            pass
+
+        suppressed_for_projects = any(
+            part.lower() in _PROJECT_DETECTION_SUPPRESS_NAMES
+            for part in relative_parts
+        )
+        markers = _PROJECT_MARKERS.intersection(names)
+        if current != base and markers and not suppressed_for_projects:
+            nested = any(
+                root == current or root in current.parents
+                for root in canonical_projects
+            )
+            independent_nested = ".git" in markers or "wp-config.php" in markers
+            if not nested or independent_nested:
+                projects.add(str(current))
+                canonical_projects.append(current)
 
         for entry in entries:
             if _is_link_or_junction(entry):
