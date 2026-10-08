@@ -1,6 +1,6 @@
 # Ehsan OpenJarvis Windows Test Installer
 
-Version: 0.1.0-alpha.2
+Version: 0.1.0-alpha.3
 
 This installer targets the development branch:
 
@@ -24,7 +24,7 @@ Default layout:
 
 The installer does not modify WampServer, Ollama models, projects, or user files.
 
-If alpha.1 was already installed, run `Repair-Ehsan-OpenJarvis.cmd`. It updates the branch, repairs the Windows PowerShell UTF-8 BOM issue in `config.toml`, keeps a backup, re-syncs dependencies, and runs Doctor + machine/model checks.
+If alpha.1 or alpha.2 is already installed, run `Repair-Ehsan-OpenJarvis.cmd`. Alpha.3 updates the branch, repairs config encoding, runs targeted tests, probes Voicebox on port 17493, lists its registered/downloaded/loaded models, and refreshes machine/model diagnostics.
 
 ## Enable NaraRouter free models
 
@@ -49,6 +49,7 @@ It collects:
 - OpenJarvis doctor output
 - free local/Nara model pool
 - Ollama model inventory
+- Voicebox health + complete `/models/status` inventory (TTS, Whisper/STT, and Voicebox LLM entries)
 - Node/npm/pnpm and developer tool versions/paths
 - NVM/FNM/Volta information
 - package cache locations
@@ -85,3 +86,7 @@ Endpoints:
 - recommended editor model alias: `free/code`
 
 Do not clean/delete duplicate files until the generated reports have been reviewed.
+
+## Voicebox direct probe
+
+With Voicebox running, double-click `Voicebox-Probe.cmd`. It queries `/health` and `/models/status`, checks port 17493 and the configured D:\\AI-Control HuggingFace cache, then creates a small support ZIP.
