@@ -36,6 +36,7 @@ enabled = [
   "project_registry",
   "drive_inventory",
   "machine_inventory",
+  "voicebox_status",
   "hygiene_report",
 ]
 
