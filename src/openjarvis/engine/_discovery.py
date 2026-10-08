@@ -14,41 +14,40 @@ from openjarvis.engine._base import InferenceEngine
 logger = logging.getLogger(__name__)
 
 # Map registry keys to config host attribute (None = no host arg)
-_BUILTIN_ENGINE_MODULES: dict[str, str] = {
-    "nararouter": "openjarvis.engine.nararouter",
-    "nim": "openjarvis.engine.nim",
-    "ollama": "openjarvis.engine.ollama",
-    "vllm": "openjarvis.engine.openai_compat_engines",
-    "llamacpp": "openjarvis.engine.openai_compat_engines",
-    "sglang": "openjarvis.engine.openai_compat_engines",
-    "mlx": "openjarvis.engine.openai_compat_engines",
-    "lmstudio": "openjarvis.engine.openai_compat_engines",
-    "exo": "openjarvis.engine.openai_compat_engines",
-    "nexa": "openjarvis.engine.openai_compat_engines",
-    "uzu": "openjarvis.engine.openai_compat_engines",
-    "apple_fm": "openjarvis.engine.openai_compat_engines",
-    "lemonade": "openjarvis.engine.openai_compat_engines",
+_BUILTIN_ENGINE_TARGETS: dict[str, tuple[str, str]] = {
+    "nararouter": ("openjarvis.engine.nararouter", "NaraRouterEngine"),
+    "nim": ("openjarvis.engine.nim", "NIMEngine"),
+    "ollama": ("openjarvis.engine.ollama", "OllamaEngine"),
+    "vllm": ("openjarvis.engine.openai_compat_engines", "VLLMEngine"),
+    "llamacpp": ("openjarvis.engine.openai_compat_engines", "LlamaCppEngine"),
+    "sglang": ("openjarvis.engine.openai_compat_engines", "SGLangEngine"),
+    "mlx": ("openjarvis.engine.openai_compat_engines", "MLXEngine"),
+    "lmstudio": ("openjarvis.engine.openai_compat_engines", "LMStudioEngine"),
+    "exo": ("openjarvis.engine.openai_compat_engines", "ExoEngine"),
+    "nexa": ("openjarvis.engine.openai_compat_engines", "NexaEngine"),
+    "uzu": ("openjarvis.engine.openai_compat_engines", "UzuEngine"),
+    "apple_fm": ("openjarvis.engine.openai_compat_engines", "AppleFmEngine"),
+    "lemonade": ("openjarvis.engine.openai_compat_engines", "LemonadeEngine"),
 }
 
 
 def _ensure_builtin_engine_registered(key: str) -> None:
-    """Re-register a known built-in after registry resets.
+    """Restore a known built-in after an explicit registry reset.
 
-    Normal application startup imports :mod:`openjarvis.engine` once and its
-    decorators populate the registry. Test isolation and long-lived plugin
-    hosts can deliberately clear registries after those modules are already
-    cached, making a later _make_engine() fail with a misleading KeyError.
-    Reload only the requested known built-in when that happens.
+    Re-register the existing class object instead of reloading its module.
+    Reloading recreates the class object, which can make isinstance checks
+    fail for callers that imported the original class before the reset.
     """
     if EngineRegistry.contains(key):
         return
-    module_name = _BUILTIN_ENGINE_MODULES.get(key)
-    if not module_name:
+    target = _BUILTIN_ENGINE_TARGETS.get(key)
+    if target is None:
         return
+    module_name, class_name = target
     module = importlib.import_module(module_name)
-    if not EngineRegistry.contains(key):
-        importlib.reload(module)
-
+    engine_cls = getattr(module, class_name, None)
+    if engine_cls is not None:
+        EngineRegistry.register_value(key, engine_cls)
 
 _HOST_MAP: Dict[str, str | None] = {
     "ollama": "ollama_host",
