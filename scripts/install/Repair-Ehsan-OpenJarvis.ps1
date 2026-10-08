@@ -8,7 +8,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepairVersion = "0.1.0-alpha.4"
+$RepairVersion = "0.1.0-alpha.4.1"
 $env:OPENJARVIS_HOME = $StateRoot
 
 if (-not (Test-Path (Join-Path $InstallRoot ".git"))) {
@@ -37,12 +37,16 @@ function Run-Capture {
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     $writer = New-Object System.IO.StreamWriter($path, $false, $utf8)
     try {
+        # Native exit codes inside a child scriptblock are scope-sensitive in
+        # Windows PowerShell 5.1. Every required native command below performs
+        # its own immediate exit-code check, so reaching this point means the
+        # captured step succeeded. Do not reuse a stale caller LASTEXITCODE.
         & $Command 2>&1 | ForEach-Object {
             $line = $_.ToString()
             Write-Host $line
             $writer.WriteLine($line)
         }
-        $code = $LASTEXITCODE
+        $code = 0
     } catch {
         $line = $_.ToString()
         Write-Host $line -ForegroundColor Red
@@ -87,14 +91,17 @@ try {
 
     Run-Capture "03-config-upgrade" {
         & $uv run python "scripts\install\Upgrade-Ehsan-Config.py" $config
+        if ($LASTEXITCODE -ne 0) { throw "config upgrade failed" }
     } | Out-Null
 
     Run-Capture "04-config-validate" {
         & $uv run python -c "import pathlib,tomllib,sys; p=pathlib.Path(sys.argv[1]); tomllib.loads(p.read_text(encoding='utf-8-sig')); print('Config TOML OK:', p)" $config
+        if ($LASTEXITCODE -ne 0) { throw "config validation failed" }
     } | Out-Null
 
     Run-Capture "05-alpha4-tests" {
         & $uv run pytest tests/core/test_config.py tests/core/test_control_plane_config.py tests/core/test_ehsan_control_plane_upgrade.py tests/engine/test_nararouter.py tests/intelligence/test_free_pool.py tests/projects/test_discovery.py tests/projects/test_inventory.py tests/projects/test_machine_inventory.py tests/projects/test_hygiene.py tests/tools/test_voicebox_status.py tests/speech/test_voicebox_stt.py tests/speech/test_discovery.py tests/mcp/test_transport.py tests/mcp/test_loader.py -q
+        if ($LASTEXITCODE -ne 0) { throw "alpha4 targeted tests failed" }
     } | Out-Null
 
     Run-Capture "06-doctor" {
@@ -111,14 +118,17 @@ try {
 
     Run-Capture "09-machine-scan" {
         & $uv run jarvis projects machine-scan
+        if ($LASTEXITCODE -ne 0) { throw "machine scan failed" }
     } | Out-Null
 
     Run-Capture "10-free-models" {
         & $uv run jarvis model free
+        if ($LASTEXITCODE -ne 0) { throw "free model discovery failed" }
     } | Out-Null
 
     Run-Capture "11-project-rescan" {
         & $uv run jarvis projects scan $ProjectsRoot --max-depth 5
+        if ($LASTEXITCODE -ne 0) { throw "project rescan failed" }
     } | Out-Null
 
     $registry = Join-Path $StateRoot "registry"
@@ -141,11 +151,11 @@ try {
     Pop-Location
 }
 
-$zip = Join-Path $supportRoot "openjarvis-repair-alpha4-$stamp.zip"
+$zip = Join-Path $supportRoot "openjarvis-repair-alpha4.1-$stamp.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $runDir "*") -DestinationPath $zip -CompressionLevel Optimal
 
 Write-Host ""
-Write-Host "Repair alpha.4 completed." -ForegroundColor Green
+Write-Host "Repair alpha.4.1 completed." -ForegroundColor Green
 Write-Host "Support ZIP: $zip"
 Write-Host "Next: run First-Run-Scan.cmd with Voicebox open."
