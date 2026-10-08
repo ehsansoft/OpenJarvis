@@ -72,6 +72,19 @@ def test_collects_all_local_models_as_zero_api_cost() -> None:
     assert all(item.local for item in candidates)
 
 
+def test_public_nim_endpoint_is_not_treated_as_zero_api_cost() -> None:
+    nim = _FakeEngine(["nvidia/model"])
+    nim._host = "https://integrate.api.nvidia.com"
+    assert collect_free_models([("nim", nim)]) == []
+
+
+def test_private_self_hosted_nim_can_join_local_pool() -> None:
+    nim = _FakeEngine(["self-hosted/model"])
+    nim._host = "http://127.0.0.1:8001"
+    candidates = collect_free_models([("nim", nim)])
+    assert [item.model_id for item in candidates] == ["self-hosted/model"]
+    assert candidates[0].local is True
+
 def test_collects_only_explicit_nara_free_models() -> None:
     nara = _FakeEngine(
         ["paid-model", "nemotron-3-super-free"],
