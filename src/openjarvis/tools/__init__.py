@@ -48,6 +48,11 @@ except ImportError:
     pass
 
 try:
+    import openjarvis.tools.voicebox_status  # noqa: F401
+except ImportError:
+    pass
+
+try:
     import openjarvis.tools.hygiene_report  # noqa: F401
 except ImportError:
     pass
