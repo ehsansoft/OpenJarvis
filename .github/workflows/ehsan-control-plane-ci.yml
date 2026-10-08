@@ -1,0 +1,110 @@
+name: Ehsan Control Plane CI
+
+on:
+  push:
+    branches:
+      - feature/ehsan-control-plane-foundation
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  windows-control-plane:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set isolated state directory
+        shell: pwsh
+        run: |
+          $stateRoot = Join-Path $env:RUNNER_TEMP 'openjarvis-state'
+          "OPENJARVIS_HOME=$stateRoot" >> $env:GITHUB_ENV
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Sync test dependencies
+        run: uv sync --python 3.13 --extra dev --extra server --group desktop-native
+
+      - name: Ruff
+        run: uv run ruff check src/ tests/
+
+      - name: Ruff format check
+        run: uv run ruff format --check src/ tests/
+
+      - name: Targeted control-plane tests
+        shell: pwsh
+        run: |
+          uv run pytest `
+            tests/engine/test_nararouter.py `
+            tests/intelligence/test_free_pool.py `
+            tests/projects/ `
+            tests/tools/test_project_registry.py `
+            tests/tools/test_drive_inventory.py `
+            tests/tools/test_machine_inventory.py `
+            tests/tools/test_voicebox_status.py `
+            tests/tools/test_hygiene_report.py `
+            tests/server/test_editor_gateway.py `
+            tests/server/test_cloud_router.py `
+            tests/cli/test_projects_cmd.py `
+            tests/cli/test_projects_windows_task.py `
+            tests/core/test_control_plane_config.py `
+            tests/core/test_ehsan_control_plane_upgrade.py `
+            tests/core/test_ehsan_finalizer.py `
+            tests/core/test_voicebox_mcp_check.py `
+            tests/core/test_real_user_acceptance.py `
+            tests/core/test_acceptance_cmd.py `
+            tests/security/test_capabilities.py `
+            tests/cli/test_standalone_security.py `
+            tests/operators/test_operators.py `
+            tests/server/test_mcp_tools_cache.py `
+            tests/scheduler/ `
+            tests/channels/test_telegram.py `
+            tests/server/test_channel_bridge.py `
+            tests/skills/test_sources.py `
+            tests/skills/test_importer.py `
+            tests/cli/test_chat_cmd.py `
+            tests/cli/test_memory_cmd.py `
+            tests/speech/test_voicebox_tts.py `
+            tests/speech/test_voicebox_stt.py `
+            tests/speech/test_discovery.py `
+            tests/mcp/test_transport.py `
+            tests/mcp/test_loader.py `
+            tests/core/test_preset_configs.py -v
+
+      - name: Package Windows test installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\ehsan-installer | Out-Null
+          Copy-Item scripts\install\ehsan-control-plane-windows.ps1 dist\ehsan-installer\
+          Copy-Item scripts\install\Install-Ehsan-OpenJarvis.cmd dist\ehsan-installer\
+          Copy-Item scripts\install\First-Run-Scan.ps1 dist\ehsan-installer\
+          Copy-Item scripts\install\First-Run-Scan.cmd dist\ehsan-installer\
+          Copy-Item scripts\install\Start-Ehsan-OpenJarvis.cmd dist\ehsan-installer\
+          Copy-Item scripts\install\Repair-Ehsan-OpenJarvis.ps1 dist\ehsan-installer\
+          Copy-Item scripts\install\Repair-Ehsan-OpenJarvis.cmd dist\ehsan-installer\
+          Copy-Item scripts\install\Finalize-Ehsan-Setup.py dist\ehsan-installer\
+          Copy-Item scripts\install\Finalize-Ehsan-OpenJarvis.ps1 dist\ehsan-installer\
+          Copy-Item scripts\install\Finalize-Ehsan-OpenJarvis.cmd dist\ehsan-installer\
+          Copy-Item scripts\install\Voicebox-Probe.ps1 dist\ehsan-installer\
+          Copy-Item scripts\install\Voicebox-Probe.cmd dist\ehsan-installer\
+          Copy-Item scripts\install\README-EHSAN-WINDOWS.md dist\ehsan-installer\
+          Copy-Item scripts\install\Upgrade-Ehsan-Config.py dist\ehsan-installer\
+          Copy-Item scripts\install\Check-Voicebox-MCP.py dist\ehsan-installer\
+          Copy-Item scripts\install\installer-manifest.json dist\ehsan-installer\
+          Compress-Archive -Path dist\ehsan-installer\* -DestinationPath dist\OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.3.zip
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.3
+          path: dist/OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.3.zip
+          if-no-files-found: error
+          retention-days: 14

@@ -73,6 +73,8 @@ class FakeMemoryBackend:
 class FakeSchedulerStore:
     """Minimal scheduler store stub."""
 
+    _db_path = ":memory:"
+
     def __init__(self) -> None:
         self._tasks: Dict[str, Dict] = {}
         self._runs: List[Dict] = []

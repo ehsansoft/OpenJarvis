@@ -10,13 +10,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
+from openjarvis.core.events import EventType
 from openjarvis.scheduler.store import SchedulerStore
 
 logger = logging.getLogger(__name__)
 
 # Event type strings (avoids editing core EventType enum)
-SCHEDULER_TASK_START = "scheduler_task_start"
-SCHEDULER_TASK_END = "scheduler_task_end"
+SCHEDULER_TASK_START = EventType.SCHEDULER_TASK_START
+SCHEDULER_TASK_END = EventType.SCHEDULER_TASK_END
 
 
 @dataclass(slots=True)
@@ -97,6 +98,8 @@ class TaskScheduler:
         poll_interval: int = 60,
         bus: Any = None,
     ) -> None:
+        if poll_interval <= 0:
+            raise ValueError("Scheduler poll interval must be positive")
         self._store = store
         self._system = system
         self._poll_interval = poll_interval
@@ -104,27 +107,57 @@ class TaskScheduler:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
+        self._execution_lock = threading.Lock()
+        from openjarvis.scheduler.ownership import SchedulerOwnership
+
+        self._ownership = SchedulerOwnership(store._db_path)
+
+    def set_system(self, system: Any) -> None:
+        """Bind the runtime owner before starting execution."""
+        self._system = system
 
     # -- Public API ----------------------------------------------------------
 
     def start(self) -> None:
         """Start the background polling daemon thread."""
-        if self._thread is not None and self._thread.is_alive():
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(
-            target=self._poll_loop, daemon=True, name="jarvis-scheduler"
-        )
-        self._thread.start()
+        with self._lifecycle_lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            if self._system is None:
+                raise RuntimeError(
+                    "TaskScheduler requires a JarvisSystem to execute tasks"
+                )
+            self._ownership.acquire()
+            self._stop_event.clear()
+            self._thread = threading.Thread(
+                target=self._poll_loop, daemon=True, name="jarvis-scheduler"
+            )
+            self._thread.start()
         logger.info("Scheduler started (poll_interval=%ds)", self._poll_interval)
 
-    def stop(self) -> None:
-        """Signal the background thread to stop and wait for it."""
+    def request_stop(self) -> None:
         self._stop_event.set()
-        if self._thread is not None:
-            self._thread.join(timeout=self._poll_interval + 5)
-            self._thread = None
+
+    def wait_stopped(self, timeout: float = 5) -> bool:
+        with self._lifecycle_lock:
+            if self._thread is not None:
+                self._thread.join(timeout=timeout)
+                if self._thread.is_alive():
+                    return False
+                self._thread = None
+            if not self._execution_lock.acquire(timeout=timeout):
+                return False
+            self._execution_lock.release()
+            self._ownership.release()
+            return True
+
+    def stop(self) -> bool:
+        """Signal the background thread to stop and wait for it."""
+        self.request_stop()
+        stopped = self.wait_stopped()
         logger.info("Scheduler stopped")
+        return stopped
 
     def create_task(
         self,
@@ -196,11 +229,30 @@ class TaskScheduler:
                 with self._lock:
                     due = self._store.get_due_tasks(now)
                 for task_dict in due:
+                    if self._stop_event.is_set():
+                        break
                     task = ScheduledTask.from_dict(task_dict)
-                    self._execute_task(task)
+                    self.run_task(task.id, due_only=True)
             except Exception:
                 logger.exception("Scheduler poll error")
             self._stop_event.wait(timeout=self._poll_interval)
+
+    def run_task(self, task_id: str, *, due_only: bool = False) -> None:
+        """Serialize manual and automatic execution against current SQLite state."""
+        if self._system is None:
+            raise RuntimeError("Execution requires the server-owned JarvisSystem")
+        with self._execution_lock:
+            self._ownership.acquire()
+            with self._lock:
+                row = self._store.get_task(task_id)
+            if row is None:
+                raise KeyError(task_id)
+            task = ScheduledTask.from_dict(row)
+            if task.status != "active":
+                raise ValueError("Only active tasks can run")
+            if due_only and (not task.next_run or task.next_run > _now_iso()):
+                return
+            self._execute_task(task)
 
     def _execute_task(self, task: ScheduledTask) -> None:
         """Execute a single due task and log the result."""
@@ -230,17 +282,24 @@ class TaskScheduler:
                 ask_kwargs: Dict[str, Any] = {
                     "agent": task.agent,
                     "tools": tools_list if tools_list else None,
+                    "context": task.context_mode != "isolated",
                 }
                 meta = task.metadata or {}
                 if meta.get("operator_id"):
                     ask_kwargs["system_prompt"] = meta.get("system_prompt", "")
                     ask_kwargs["operator_id"] = meta["operator_id"]
-                result_text = self._system.ask(
+                result = self._system.ask(
                     task.prompt,
                     **ask_kwargs,
                 )
+                if isinstance(result, dict):
+                    result_text = str(result.get("content", ""))
+                    if result.get("error"):
+                        raise RuntimeError(result_text or str(result["error"]))
+                else:
+                    result_text = str(result)
             else:
-                result_text = f"[dry-run] Would execute: {task.prompt}"
+                raise RuntimeError("Execution requires a JarvisSystem")
             success = True
         except Exception as exc:
             error_text = str(exc)
@@ -263,9 +322,13 @@ class TaskScheduler:
             d = self._store.get_task(task.id)
             if d is not None:
                 d["last_run"] = finished_at
-                next_run = self._compute_next_run(ScheduledTask.from_dict(d))
+                next_run = (
+                    None
+                    if d["status"] == "cancelled"
+                    else self._compute_next_run(ScheduledTask.from_dict(d))
+                )
                 d["next_run"] = next_run
-                if next_run is None:
+                if next_run is None and d["status"] == "active":
                     d["status"] = "completed"
                 self._store.update_task(d)
 
@@ -278,6 +341,8 @@ class TaskScheduler:
                     "success": success,
                     "result": result_text,
                     "error": error_text,
+                    "name": task.id,
+                    "notify": (task.metadata or {}).get("notify"),
                 },
             )
 
@@ -293,18 +358,24 @@ class TaskScheduler:
             if task.last_run is not None:
                 return None
             # Otherwise the schedule_value is the target ISO datetime
-            return task.schedule_value
+            target = datetime.fromisoformat(task.schedule_value)
+            if target.tzinfo is None:
+                raise ValueError("One-time schedules require an explicit UTC offset")
+            return target.astimezone(timezone.utc).isoformat()
 
         if task.schedule_type == "interval":
             seconds = float(task.schedule_value)
+            if seconds <= 0:
+                raise ValueError("Interval must be positive")
             next_time = now + timedelta(seconds=seconds)
             return next_time.isoformat()
 
         if task.schedule_type == "cron":
-            timezone_name = str((task.metadata or {}).get("timezone") or "") or None
+            timezone_name = str((task.metadata or {}).get("timezone") or "UTC")
+            task.metadata["timezone"] = timezone_name
             return self._compute_next_cron(task.schedule_value, now, timezone_name)
 
-        return None
+        raise ValueError(f"Unknown schedule type: {task.schedule_type}")
 
     @staticmethod
     def _compute_next_cron(

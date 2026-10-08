@@ -233,6 +233,7 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "db_query": [Capability.CODE_EXECUTE],
     "digest_collect": [Capability.MEMORY_READ, Capability.NETWORK_FETCH],
     "docker_shell_exec": [Capability.CODE_EXECUTE],
+    "drive_inventory": [Capability.FILE_READ],
     "execute_pending_actions": [
         Capability.SYSTEM_ADMIN,
         Capability.CHANNEL_SEND,
@@ -247,6 +248,7 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "git_log": [Capability.FILE_READ],
     "git_status": [Capability.FILE_READ],
     "http_request": [Capability.NETWORK_FETCH],
+    "hygiene_report": [Capability.FILE_READ],
     "image_generate": [Capability.NETWORK_FETCH, Capability.FILE_WRITE],
     "kg_add_entity": [Capability.MEMORY_WRITE],
     "kg_add_relation": [Capability.MEMORY_WRITE],
@@ -256,6 +258,7 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "knowledge_sql": [Capability.MEMORY_READ],
     "list_scheduled_tasks": [Capability.SCHEDULE_CREATE],
     "llm": [Capability.NETWORK_FETCH],
+    "machine_inventory": [Capability.FILE_READ],
     "memory_index": [Capability.MEMORY_WRITE],
     "memory_manage": [Capability.MEMORY_READ, Capability.MEMORY_WRITE],
     "memory_retrieve": [Capability.MEMORY_READ],
@@ -263,6 +266,7 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "memory_store": [Capability.MEMORY_WRITE],
     "pause_scheduled_task": [Capability.SCHEDULE_CREATE],
     "pdf_extract": [Capability.FILE_READ],
+    "project_registry": [Capability.FILE_READ],
     "queue_action": [Capability.MEMORY_WRITE],
     "record_decision": [Capability.SYSTEM_ADMIN, Capability.MEMORY_WRITE],
     "repl": [Capability.CODE_EXECUTE],
@@ -275,6 +279,7 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "text_to_speech": [Capability.NETWORK_FETCH, Capability.FILE_WRITE],
     "think": [],
     "user_profile_manage": [Capability.FILE_READ, Capability.FILE_WRITE],
+    "voicebox_status": [Capability.FILE_READ, Capability.NETWORK_FETCH],
     "web_search": [Capability.NETWORK_FETCH],
 }
 

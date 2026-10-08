@@ -1,0 +1,83 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openjarvis/local-code",
+  "providers": {
+    "openjarvis": {
+      "name": "OpenJarvis Local Control Plane",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:8000/router/v1"
+      },
+      "models": {
+        "code": {
+          "name": "OpenJarvis Free Code",
+          "modelID": "free/code",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "research": {
+          "name": "OpenJarvis Free Research",
+          "modelID": "free/research"
+        },
+        "fast": {
+          "name": "OpenJarvis Free Fast",
+          "modelID": "free/fast"
+        },
+        "vision": {
+          "name": "OpenJarvis Free Vision",
+          "modelID": "free/vision",
+          "capabilities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "local-code": {
+          "name": "OpenJarvis Private Code",
+          "modelID": "local/code",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "local-fast": {
+          "name": "OpenJarvis Local Fast",
+          "modelID": "local/fast"
+        },
+        "local-research": {
+          "name": "OpenJarvis Private Research",
+          "modelID": "local/research"
+        },
+        "local-vision": {
+          "name": "OpenJarvis Private Vision",
+          "modelID": "local/vision",
+          "capabilities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

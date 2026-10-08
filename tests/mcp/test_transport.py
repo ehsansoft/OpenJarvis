@@ -568,6 +568,16 @@ class TestStreamableHTTPTransport:
         return mock_response
 
     @patch("httpx.Client")
+    def test_http_transport_follows_mounted_endpoint_redirects(self, mock_client_cls):
+        mock_client_cls.return_value = MagicMock()
+        transport = StreamableHTTPTransport("http://127.0.0.1:17493/mcp")
+        try:
+            kwargs = mock_client_cls.call_args.kwargs
+            assert kwargs["follow_redirects"] is True
+        finally:
+            transport.close()
+
+    @patch("httpx.Client")
     def test_send_receive(self, mock_client_cls):
         """Mock httpx.Client to simulate HTTP response."""
         mock_client = MagicMock()
@@ -598,6 +608,24 @@ class TestStreamableHTTPTransport:
         call_args = mock_client.post.call_args
         assert call_args[0][0] == "http://localhost:8080/mcp"
         assert call_args[1]["headers"]["Content-Type"] == "application/json"
+
+    @patch("httpx.Client")
+    def test_custom_headers_are_sent(self, mock_client_cls):
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.post.return_value = self._make_mock_response(
+            {"jsonrpc": "2.0", "id": 1, "result": {}}
+        )
+
+        transport = StreamableHTTPTransport(
+            "http://127.0.0.1:17493/mcp",
+            headers={"X-Voicebox-Client-Id": "openjarvis"},
+        )
+        transport.send(MCPRequest(method="initialize", id=1))
+
+        headers = mock_client.post.call_args[1]["headers"]
+        assert headers["X-Voicebox-Client-Id"] == "openjarvis"
+        assert headers["Content-Type"] == "application/json"
 
     @patch("httpx.Client")
     def test_close_closes_client(self, mock_client_cls):

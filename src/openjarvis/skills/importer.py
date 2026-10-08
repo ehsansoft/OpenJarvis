@@ -38,6 +38,27 @@ from openjarvis.skills.tool_translator import ToolTranslator
 COPIED_SUBDIRS = ("references", "assets", "templates")
 
 
+def _dangerous_tools(frontmatter, manifest):
+    declared = frontmatter.get("allowed-tools", [])
+    if isinstance(declared, str):
+        declared = declared.replace(",", " ").split()
+    capabilities = {
+        "Bash": "shell:execute",
+        "shell_exec": "shell:execute",
+        "Write": "filesystem:write",
+        "Edit": "filesystem:write",
+        "file_write": "filesystem:write",
+        "file_edit": "filesystem:write",
+    }
+    return sorted(
+        {
+            capabilities[t]
+            for t in [*declared, *(s.tool_name for s in manifest.steps)]
+            if t in capabilities
+        }
+    )
+
+
 @dataclass(slots=True)
 class ImportResult:
     """Result of importing a single skill."""
@@ -124,6 +145,9 @@ class SkillImporter:
             has_signature=bool(manifest.signature),
         )
         result.dangerous_capabilities = has_dangerous_capabilities(manifest)
+        for capability in _dangerous_tools(frontmatter, manifest):
+            if capability not in result.dangerous_capabilities:
+                result.dangerous_capabilities.append(capability)
 
         if result.dangerous_capabilities and result.trust_tier == TrustTier.UNREVIEWED:
             result.requires_confirmation = True
@@ -205,6 +229,33 @@ class SkillImporter:
         self._write_source_metadata(target_dir, resolved, result)
 
         return result
+
+    def audit_skill(self, resolved: ResolvedSkill) -> dict:
+        """Report compatibility and conflicts without importing or executing."""
+        frontmatter, body = self._read_skill_md(resolved.path / "SKILL.md")
+        manifest = self._parser.parse_frontmatter(frontmatter, markdown_content=body)
+        translated_body, missing = self._translator.translate_markdown(body)
+        applied = [
+            f"{external}->{internal}"
+            for external, internal in self._translator._table.items()
+            if external in body and external not in translated_body
+        ]
+        return {
+            "name": resolved.name,
+            "category": resolved.category,
+            "translated_tools": applied,
+            "untranslated_tools": missing,
+            "dangerous_capabilities": sorted(
+                set(
+                    has_dangerous_capabilities(manifest)
+                    + _dangerous_tools(frontmatter, manifest)
+                )
+            ),
+            "scripts_present": (resolved.path / "scripts").exists(),
+            "scripts_imported": False,
+            "conflict": (self._target_root / resolved.source / resolved.name).exists(),
+            "imported": False,
+        }
 
     # ------------------------------------------------------------------
     # Helpers

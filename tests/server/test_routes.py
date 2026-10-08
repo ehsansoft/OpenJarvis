@@ -83,6 +83,17 @@ def client_with_agent():
     return TestClient(app)
 
 
+class TestEditorRouterDiscovery:
+    def test_router_root_explains_editor_endpoints(self, client):
+        response = client.get("/router/v1")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "ok"
+        assert payload["recommended_model_alias"] == "free/code"
+        assert payload["endpoints"]["models"] == "/router/v1/models"
+        assert payload["endpoints"]["chat_completions"] == "/router/v1/chat/completions"
+
+
 # ---------------------------------------------------------------------------
 # Chat completions tests
 # ---------------------------------------------------------------------------

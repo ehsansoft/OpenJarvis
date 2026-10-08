@@ -28,6 +28,28 @@ requires_respx = pytest.mark.skipif(
 )
 
 
+def test_configured_context_and_explicit_request_override():
+    payloads = []
+
+    def reply(request):
+        payloads.append(json.loads(request.content))
+        return httpx.Response(200, json={"message": {"content": "ok"}})
+
+    engine = OllamaEngine(host="http://fixture", num_ctx=4096)
+    engine._client.close()
+    engine._client = httpx.Client(
+        base_url="http://fixture", transport=httpx.MockTransport(reply)
+    )
+    try:
+        engine.generate([Message(role=Role.USER, content="test")], model="local-model")
+        engine.generate(
+            [Message(role=Role.USER, content="test")], model="local-model", num_ctx=8192
+        )
+        assert [p["options"]["num_ctx"] for p in payloads] == [4096, 8192]
+    finally:
+        engine._client.close()
+
+
 @pytest.fixture()
 def engine() -> OllamaEngine:
     EngineRegistry.register_value("ollama", OllamaEngine)
