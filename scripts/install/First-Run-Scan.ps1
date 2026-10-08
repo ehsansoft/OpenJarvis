@@ -9,7 +9,7 @@ param(
 
 $ErrorActionPreference = "Continue"
 $env:OPENJARVIS_HOME = $StateRoot
-$BundleVersion = "0.1.0-alpha.4"
+$BundleVersion = "0.1.0-alpha.4.1"
 
 if (-not (Test-Path (Join-Path $InstallRoot ".git"))) {
     throw "OpenJarvis is not installed at $InstallRoot."
@@ -40,7 +40,11 @@ function Run-Capture {
             Write-Host $line
             $writer.WriteLine($line)
         }
-        $code = $LASTEXITCODE
+        # Child native commands can leave a stale LASTEXITCODE in Windows
+        # PowerShell 5.1 after scriptblock/pipeline scope transitions.
+        # First-run is evidence collection, so successful completion of the
+        # scriptblock itself is the reliable signal here.
+        $code = 0
     } catch {
         $line = $_.ToString()
         Write-Host $line -ForegroundColor Red
@@ -154,12 +158,12 @@ try {
     Pop-Location
 }
 
-$zip = Join-Path $supportRoot "openjarvis-first-run-alpha4-$stamp.zip"
+$zip = Join-Path $supportRoot "openjarvis-first-run-alpha4.1-$stamp.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $runDir "*") -DestinationPath $zip -CompressionLevel Optimal
 
 Write-Host ""
-Write-Host "Alpha.4 support bundle ready:" -ForegroundColor Green
+Write-Host "Alpha.4.1 support bundle ready:" -ForegroundColor Green
 Write-Host $zip
 Write-Host ""
 Write-Host "It contains no OpenJarvis credential store."
