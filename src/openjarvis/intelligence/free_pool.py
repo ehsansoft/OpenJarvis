@@ -392,10 +392,18 @@ class FreePoolEngine(InferenceEngine):
             return [self._direct[model]]
         if model not in VIRTUAL_ALIASES:
             return []
+        task = self._task_for_alias(model)
+        # Coding/fast/default stay local-first for privacy and latency.
+        # Research and vision are capability-first so rotating free remote
+        # models with long context/multimodal support can actually be used.
+        prefer_local = self._prefer_local and task not in {
+            "research",
+            "vision",
+        }
         return rank_free_models(
             self._candidates,
-            self._task_for_alias(model),
-            prefer_local=self._prefer_local,
+            task,
+            prefer_local=prefer_local,
             allow_remote=self._allow_remote,
         )
 
