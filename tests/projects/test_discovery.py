@@ -80,6 +80,36 @@ def test_nested_monorepo_packages_are_not_counted_as_projects(
     assert "vendor-tool" in paths
 
 
+def test_reference_and_archive_roots_remain_searchable_but_classified(
+    tmp_path: Path,
+) -> None:
+    reference = tmp_path / "Github-rep" / "upstream-lib"
+    reference.mkdir(parents=True)
+    (reference / "package.json").write_text(
+        '{"name":"upstream-lib"}',
+        encoding="utf-8",
+    )
+
+    archive = tmp_path / "client-backups" / "site-copy"
+    archive.mkdir(parents=True)
+    (archive / "composer.json").write_text("{}", encoding="utf-8")
+
+    active = tmp_path / "my-app"
+    active.mkdir()
+    (active / "package.json").write_text(
+        '{"name":"my-app"}',
+        encoding="utf-8",
+    )
+
+    records = discover_projects(tmp_path, max_depth=4)
+    by_name = {record.name: record for record in records}
+
+    assert by_name["upstream-lib"].role == "reference"
+    assert by_name["upstream-lib"].collection == "Github-rep"
+    assert by_name["site-copy"].role == "archive"
+    assert by_name["my-app"].role == "active"
+
+
 def test_registry_round_trip(tmp_path: Path) -> None:
     project = tmp_path / "python-tool"
     project.mkdir()
@@ -94,7 +124,7 @@ def test_registry_round_trip(tmp_path: Path) -> None:
 
     assert written == registry_path
     payload = load_registry(registry_path)
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["root"] == str(tmp_path.resolve())
     assert payload["projects"][0]["project_type"] == "python"
 
