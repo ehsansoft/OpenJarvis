@@ -1,6 +1,6 @@
 # Ehsan OpenJarvis Windows Test Installer
 
-Version: 0.1.0-alpha.3
+Version: 0.1.0-alpha.4
 
 This installer targets the development branch:
 
@@ -24,7 +24,7 @@ Default layout:
 
 The installer does not modify WampServer, Ollama models, projects, or user files.
 
-If alpha.1 or alpha.2 is already installed, run `Repair-Ehsan-OpenJarvis.cmd`. Alpha.3 updates the branch, repairs config encoding, runs targeted tests, probes Voicebox on port 17493, lists its registered/downloaded/loaded models, and refreshes machine/model diagnostics.
+If an earlier alpha is already installed, run `Repair-Ehsan-OpenJarvis.cmd`. Alpha.4 migrates the existing config without replacing it, enables the personal security profile, disables external analytics, connects Voicebox STT and MCP, runs targeted tests, rescans projects with monorepo/cache suppression, and refreshes model and machine evidence.
 
 ## Enable NaraRouter free models
 
@@ -90,3 +90,19 @@ Do not clean/delete duplicate files until the generated reports have been review
 ## Voicebox direct probe
 
 With Voicebox running, double-click `Voicebox-Probe.cmd`. It queries `/health` and `/models/status`, checks port 17493 and the configured D:\\AI-Control HuggingFace cache, then creates a small support ZIP.
+
+
+## Alpha.4 evidence-driven changes
+
+- Voicebox Whisper is preferred for STT while Voicebox is running; Faster-Whisper remains the local fallback.
+- Voicebox MCP is configured at `http://127.0.0.1:17493/mcp` with client id `openjarvis`.
+- Voicebox profiles, cache availability, loaded/downloaded inconsistencies and port exposure are reported.
+- Hardware inventory adds CPU, RAM, GPU/NVIDIA and fixed-disk capacity.
+- Doctor loads saved NaraRouter credentials before health checks.
+- `free/research` and `free/vision` are capability-first; coding remains local-first.
+- Project discovery suppresses cache/package-store roots and collapses nested monorepo packages.
+- Cleanup scans the full root and returns the globally largest candidates instead of the first 500 encountered.
+- WSL version output is normalized; Composer cache discovery uses global config.
+- WampServer WordPress roots are deduplicated case-insensitively.
+
+Keep Voicebox open during repair and first-run if you want the MCP and Whisper bridge verified.
