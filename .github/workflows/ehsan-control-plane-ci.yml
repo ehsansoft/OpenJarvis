@@ -71,6 +71,8 @@ jobs:
           Copy-Item scripts\install\Repair-Ehsan-OpenJarvis.ps1 dist\ehsan-installer\
           Copy-Item scripts\install\Repair-Ehsan-OpenJarvis.cmd dist\ehsan-installer\
           Copy-Item scripts\install\Finalize-Ehsan-Setup.py dist\ehsan-installer\
+          Copy-Item scripts\install\Finalize-Ehsan-OpenJarvis.ps1 dist\ehsan-installer\
+          Copy-Item scripts\install\Finalize-Ehsan-OpenJarvis.cmd dist\ehsan-installer\
           Copy-Item scripts\install\Voicebox-Probe.ps1 dist\ehsan-installer\
           Copy-Item scripts\install\Voicebox-Probe.cmd dist\ehsan-installer\
           Copy-Item scripts\install\README-EHSAN-WINDOWS.md dist\ehsan-installer\
