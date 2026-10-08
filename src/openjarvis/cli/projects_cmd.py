@@ -18,6 +18,7 @@ from openjarvis.projects import (
     scan_cleanup_candidates,
     scan_drive_inventory,
     scan_duplicate_files,
+    detect_voicebox,
     scan_machine_inventory,
     write_cleanup_report,
     write_duplicate_report,
@@ -244,6 +245,60 @@ def inventory(
                 f"- [{item['priority']}] {item['title']}: "
                 f"{item['recommendation']}"
             )
+
+
+@projects.command("voicebox-scan")
+@click.option(
+    "--host",
+    default=None,
+    help="Voicebox base URL; defaults to config or http://127.0.0.1:17493.",
+)
+@click.option("--json", "as_json", is_flag=True)
+def voicebox_scan(host: str | None, as_json: bool) -> None:
+    """Probe the local Voicebox API and list all model states."""
+    config = load_config()
+    target = (
+        host
+        or config.projects.voicebox_host
+        or os.environ.get("VOICEBOX_HOST", "")
+    )
+    result = detect_voicebox(target)
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    click.echo(f"Voicebox: {result.get('host', target)}")
+    if not result.get("reachable"):
+        click.echo(
+            "Status: not reachable"
+            + (
+                f" ({result.get('error')})"
+                if result.get("error")
+                else ""
+            )
+        )
+        raise click.ClickException(
+            "Voicebox is not reachable. Start the Voicebox desktop app/backend "
+            "and verify its local server port."
+        )
+
+    click.echo(
+        f"Models: {result.get('model_count', 0)} registered, "
+        f"{result.get('downloaded_count', 0)} downloaded, "
+        f"{result.get('loaded_count', 0)} loaded"
+    )
+    for model in result.get("models", []):
+        flags = []
+        if model.get("downloaded"):
+            flags.append("downloaded")
+        if model.get("loaded"):
+            flags.append("loaded")
+        state = ", ".join(flags) or "available"
+        click.echo(
+            f"- {model.get('display_name') or model.get('model_name')} "
+            f"[{model.get('engine') or '?'}] — {state}"
+        )
 
 
 @projects.command("machine-scan")
