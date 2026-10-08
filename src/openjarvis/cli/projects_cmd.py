@@ -67,18 +67,19 @@ def _write_windows_scan_script(
     script = _scan_script_path()
     script.parent.mkdir(parents=True, exist_ok=True)
 
-    python = _powershell_quote(sys.executable)
+    scripts_dir = Path(sys.executable).resolve().parent
+    jarvis_exe = scripts_dir / ("jarvis.exe" if os.name == "nt" else "jarvis")
+    command = _powershell_quote(str(jarvis_exe))
     root_q = _powershell_quote(str(root))
     projects_q = _powershell_quote(str(projects_root))
     output_q = _powershell_quote(str(output))
     lines = [
         "$ErrorActionPreference = 'Stop'",
-        f"& {python} -m openjarvis.cli projects scan {projects_q} "
-        "--max-depth 5",
+        f"& {command} projects scan {projects_q} --max-depth 5",
         "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
-        f"& {python} -m openjarvis.cli projects machine-scan",
+        f"& {command} projects machine-scan",
         "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
-        f"& {python} -m openjarvis.cli projects inventory {root_q} "
+        f"& {command} projects inventory {root_q} "
         f"--output {output_q} --max-files {max_files}",
         "exit $LASTEXITCODE",
         "",
