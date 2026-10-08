@@ -1,6 +1,6 @@
 # Ehsan OpenJarvis Windows Test Installer
 
-Version: 0.1.0-alpha.4.1
+Version: 0.1.0-alpha.4.2
 
 This installer targets the development branch:
 
@@ -110,3 +110,22 @@ Keep Voicebox open during repair and first-run if you want the MCP and Whisper b
 ## Alpha.4.1 hotfix
 
 Windows PowerShell 5.1 can leave a stale `$LASTEXITCODE` after a native command executes inside a child scriptblock piped through `ForEach-Object`. Alpha.4 incorrectly interpreted that stale caller value as failure even though `git fetch`, `git switch`, and `git pull` had succeeded. Alpha.4.1 checks required native exit codes immediately inside each step and treats a captured step as successful when it completes without throwing.
+
+## Alpha.4.2 finalization
+
+Alpha.4.2 replaces the fragile PowerShell capture-based repair pipeline with a
+Python subprocess finalizer. Native process return codes are now collected
+directly, avoiding Windows PowerShell 5.1 LASTEXITCODE scope bugs.
+
+It also:
+- canonicalizes Voicebox MCP to `http://127.0.0.1:17493/mcp/`
+- follows local mounted-endpoint redirects for MCP Streamable HTTP
+- verifies all four Voicebox MCP tools directly and through OpenJarvis config
+- smoke-tests `http://127.0.0.1:8000/router/v1/models`
+- copies OpenCode/Kilo templates to the OpenJarvis state directory
+- classifies discovered roots as active/reference/archive instead of treating
+  the large Github-rep reference collection as active work
+- warns on low disk headroom
+- uses a longer NaraRouter health probe to avoid false Doctor warnings
+
+Run `Repair-Ehsan-OpenJarvis.cmd`; it now invokes the deterministic finalizer.
