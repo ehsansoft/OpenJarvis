@@ -37,6 +37,7 @@ class MachineInventoryTool(BaseTool):
                             "wampserver",
                             "runtime_managers",
                             "package_caches",
+                            "hardware",
                             "recommendations",
                         ],
                     }
@@ -81,6 +82,8 @@ class MachineInventoryTool(BaseTool):
             payload = data.get("runtime_managers", {})
         elif section == "package_caches":
             payload = data.get("package_caches", [])
+        elif section == "hardware":
+            payload = data.get("hardware", {})
         elif section == "recommendations":
             payload = data.get("recommendations", [])
         else:
@@ -105,6 +108,14 @@ class MachineInventoryTool(BaseTool):
                 ),
                 "runtime_managers": sorted(data.get("runtime_managers", {})),
                 "package_caches": len(data.get("package_caches", [])),
+                "gpus": [
+                    item.get("Name") or item.get("name")
+                    for item in data.get("hardware", {}).get("gpus", [])
+                    if isinstance(item, dict)
+                ],
+                "total_memory_bytes": data.get("hardware", {})
+                .get("memory", {})
+                .get("TotalPhysicalMemory", 0),
             }
 
         return ToolResult(
