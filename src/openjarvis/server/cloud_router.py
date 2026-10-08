@@ -43,7 +43,7 @@ _LOCAL_HF_ORGS = (
 # OpenJarvis virtual model aliases contain a slash but are resolved by the
 # local MultiEngine/FreePoolEngine, not by OpenRouter. Keep this check ahead
 # of the generic "provider/model" OpenRouter fallback below.
-_LOCAL_VIRTUAL_PREFIXES = ("free/",)
+_LOCAL_VIRTUAL_PREFIXES = ("free/", "local/")
 
 
 def _load_keys() -> dict[str, str]:

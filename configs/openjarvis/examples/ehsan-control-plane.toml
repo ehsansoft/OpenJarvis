@@ -7,14 +7,17 @@ default = "ollama"
 
 [engine.ollama]
 host = "http://localhost:11434"
+num_ctx = 4096
 
 [engine.nararouter]
 host = "https://router.bynara.id"
 free_only = true
 
 [intelligence]
-default_model = ""
-model_code = "free/code"
+default_model = "local/fast"
+model_code = "local/code"
+private_routing = true
+allow_private_remote = false
 
 [agent]
 default_agent = "orchestrator"
@@ -74,11 +77,19 @@ enabled = true
 enabled = false
 
 [speech]
-backend = "auto"
+backend = "voicebox"
+tts_backend = "voicebox"
 model = "base"
 language = ""
 device = "auto"
 compute_type = "int8"
+
+[deep_research]
+model = "local/research"
+
+[scheduler]
+enabled = false
+poll_interval = 10
 
 [tools.mcp]
 enabled = true

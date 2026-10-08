@@ -169,6 +169,13 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
 
     # Inject memory context into messages before dispatching
     config = getattr(request.app.state, "config", None)
+    if (
+        config is not None
+        and config.intelligence.private_routing
+        and not config.intelligence.allow_private_remote
+        and not engine.can_serve(model)
+    ):
+        raise HTTPException(400, "Private routing requires an available local model")
     memory_backend = getattr(request.app.state, "memory_backend", None)
     if (
         config is not None
@@ -453,7 +460,10 @@ def _uses_direct_cloud_router(engine: Any, model: str) -> bool:
     """Whether *model* should bypass the configured engine for direct cloud."""
     from openjarvis.server.cloud_router import is_cloud_model
 
-    return is_cloud_model(model) and _engine_key_for_model(engine, model) != "litellm"
+    return is_cloud_model(model) and _engine_key_for_model(engine, model) not in {
+        "litellm",
+        "private-pool",
+    }
 
 
 def _handle_direct(
@@ -1106,6 +1116,8 @@ async def _handle_stream(
 @router.get("/router/v1")
 async def router_index(request: Request) -> dict[str, Any]:
     """Human-friendly discovery document for editor clients."""
+    config = getattr(request.app.state, "config", None)
+    private = config is not None and config.intelligence.private_routing
     return {
         "service": "OpenJarvis editor router",
         "status": "ok",
@@ -1116,7 +1128,7 @@ async def router_index(request: Request) -> dict[str, Any]:
             "health": "/health",
             "docs": "/docs",
         },
-        "recommended_model_alias": "free/code",
+        "recommended_model_alias": "local/code" if private else "free/code",
     }
 
 
@@ -1133,7 +1145,7 @@ async def router_chat_completions(
     OpenCode, Kilo Code, and similar clients that already have their own agent
     loop.
     """
-    engine = request.app.state.engine
+    engine = getattr(request.app.state, "router_engine", request.app.state.engine)
     model = request_body.model
     config = getattr(request.app.state, "config", None)
     bus = getattr(request.app.state, "bus", None)
@@ -1174,7 +1186,15 @@ async def router_chat_completions(
 @router.get("/router/v1/models")
 async def router_list_models(request: Request) -> ModelListResponse:
     """List models for direct editor clients, including stable free/* aliases."""
-    return await list_models(request)
+    engine = getattr(request.app.state, "router_engine", request.app.state.engine)
+    ids = await asyncio.to_thread(engine.list_models)
+    return ModelListResponse(
+        data=[
+            ModelObject(id=m, owned_by="openjarvis")
+            for m in ids
+            if not is_embed_only_model(m)
+        ]
+    )
 
 
 @router.get("/v1/models")

@@ -11,10 +11,10 @@ from __future__ import annotations
 import ipaddress
 import logging
 import time
-from urllib.parse import urlparse
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlparse
 
 from openjarvis.core.types import Message
 from openjarvis.engine._base import EngineConnectionError, InferenceEngine
@@ -28,6 +28,11 @@ VIRTUAL_ALIASES = (
     "free/research",
     "free/vision",
     "free/fast",
+    "local/auto",
+    "local/code",
+    "local/research",
+    "local/vision",
+    "local/fast",
 )
 
 
@@ -77,9 +82,7 @@ _LOCAL_ENGINE_KEYS = frozenset(
 
 def _host_is_local_or_private(raw_host: str) -> bool:
     try:
-        parsed = urlparse(
-            raw_host if "://" in raw_host else f"http://{raw_host}"
-        )
+        parsed = urlparse(raw_host if "://" in raw_host else f"http://{raw_host}")
         hostname = parsed.hostname or ""
     except ValueError:
         return False
@@ -89,11 +92,7 @@ def _host_is_local_or_private(raw_host: str) -> bool:
         address = ipaddress.ip_address(hostname)
     except ValueError:
         return False
-    return (
-        address.is_loopback
-        or address.is_private
-        or address.is_link_local
-    )
+    return address.is_loopback or address.is_private or address.is_link_local
 
 
 def _is_zero_api_local_engine(
@@ -109,15 +108,12 @@ def _is_zero_api_local_engine(
     if bool(getattr(engine, "is_cloud", False)):
         return False
 
-    raw_host = (
-        getattr(engine, "_host", "")
-        or getattr(engine, "host", "")
-        or ""
-    )
+    raw_host = getattr(engine, "_host", "") or getattr(engine, "host", "") or ""
     if isinstance(raw_host, str) and raw_host.strip():
         return _host_is_local_or_private(raw_host.strip())
 
     return engine_key in _LOCAL_ENGINE_KEYS
+
 
 def _truthy_metadata(metadata: dict[str, Any], *keys: str) -> bool:
     for key in keys:
@@ -154,6 +150,10 @@ def infer_capabilities(model_id: str, metadata: dict[str, Any]) -> set[str]:
     """Infer coarse capabilities from provider metadata and model names."""
     lowered = model_id.lower()
     caps = {"text"}
+    declared = metadata.get("capabilities", [])
+    caps.update(c for c in declared if c in {"vision", "tools", "reasoning"})
+    if "thinking" in declared:
+        caps.add("reasoning")
 
     if _truthy_metadata(metadata, "vision", "supports_vision", "multimodal"):
         caps.add("vision")
@@ -246,6 +246,13 @@ def collect_free_models(
             except Exception as exc:
                 logger.debug("Failed listing local models for %s: %s", engine_key, exc)
                 continue
+            metadata_by_id = {}
+            metadata_method = getattr(engine, "list_model_metadata", None)
+            if callable(metadata_method):
+                try:
+                    metadata_by_id = {m["id"]: m for m in metadata_method()}
+                except Exception:
+                    logger.debug("Local model metadata unavailable", exc_info=True)
             discovered = [
                 FreeModelCandidate(
                     model_id=model_id,
@@ -253,9 +260,16 @@ def collect_free_models(
                     engine=engine,
                     local=True,
                     reason="local-no-api-cost",
-                    capabilities=infer_capabilities(model_id, {}),
+                    capabilities=infer_capabilities(
+                        model_id, metadata_by_id.get(model_id, {})
+                    ),
+                    context_length=_context_length(metadata_by_id.get(model_id, {})),
+                    metadata=metadata_by_id.get(model_id, {}),
                 )
                 for model_id in model_ids
+                if "embedding"
+                not in metadata_by_id.get(model_id, {}).get("capabilities", [])
+                and not any(t in model_id.lower() for t in ("embed", "nomic-bert"))
             ]
         else:
             discovered = []
@@ -293,6 +307,8 @@ def _score_candidate(
     elif task == "fast":
         score += 30 if candidate.local else 10
         score -= min(candidate.context_length // 100_000, 10)
+        if candidate.model_id == "qwen3.5:2b":
+            score += 100
     else:
         score += 15 if "reasoning" in caps else 0
         score += 10 if "long-context" in caps else 0
@@ -315,15 +331,11 @@ def rank_free_models(
 ) -> list[FreeModelCandidate]:
     """Rank free candidates for a task, with deterministic local-first policy."""
     filtered = [
-        candidate
-        for candidate in candidates
-        if allow_remote or candidate.local
+        candidate for candidate in candidates if allow_remote or candidate.local
     ]
     if task == "vision":
         filtered = [
-            candidate
-            for candidate in filtered
-            if "vision" in candidate.capabilities
+            candidate for candidate in filtered if "vision" in candidate.capabilities
         ]
     return sorted(
         filtered,
@@ -380,7 +392,7 @@ class FreePoolEngine(InferenceEngine):
         return list(self._candidates)
 
     def _task_for_alias(self, model: str) -> str:
-        if not model.startswith("free/"):
+        if not model.startswith(("free/", "local/")):
             return "auto"
         task = model.split("/", 1)[1]
         valid = {"auto", "code", "research", "vision", "fast"}
@@ -404,7 +416,7 @@ class FreePoolEngine(InferenceEngine):
             self._candidates,
             task,
             prefer_local=prefer_local,
-            allow_remote=self._allow_remote,
+            allow_remote=self._allow_remote and not model.startswith("local/"),
         )
 
     def generate(
@@ -485,8 +497,7 @@ class FreePoolEngine(InferenceEngine):
                     raise
                 errors.append(f"{candidate.engine_key}/{candidate.model_id}: {exc}")
                 logger.warning(
-                    "Free streaming candidate failed before first token "
-                    "(%s/%s): %s",
+                    "Free streaming candidate failed before first token (%s/%s): %s",
                     candidate.engine_key,
                     candidate.model_id,
                     exc,
@@ -533,20 +544,16 @@ class FreePoolEngine(InferenceEngine):
             except Exception as exc:
                 if emitted:
                     raise
-                errors.append(
-                    f"{candidate.engine_key}/{candidate.model_id}: {exc}"
-                )
+                errors.append(f"{candidate.engine_key}/{candidate.model_id}: {exc}")
                 logger.warning(
-                    "Free rich-stream candidate failed before first chunk "
-                    "(%s/%s): %s",
+                    "Free rich-stream candidate failed before first chunk (%s/%s): %s",
                     candidate.engine_key,
                     candidate.model_id,
                     exc,
                 )
 
         raise EngineConnectionError(
-            "All free rich-stream candidates failed: "
-            + "; ".join(errors[-5:])
+            "All free rich-stream candidates failed: " + "; ".join(errors[-5:])
         )
 
     def list_models(self) -> list[str]:
@@ -558,6 +565,9 @@ class FreePoolEngine(InferenceEngine):
     def health(self) -> bool:
         self.refresh()
         return bool(self._candidates)
+
+    def can_serve(self, model: str) -> bool:
+        return bool(self._choices(model))
 
     def close(self) -> None:
         # Underlying engines are owned by the caller/discovery layer.

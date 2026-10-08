@@ -1,6 +1,6 @@
 {
   "$schema": "https://app.kilo.ai/config.json",
-  "model": "openai-compatible/openjarvis-code",
+  "model": "openai-compatible/openjarvis-local-code",
   "provider": {
     "openai-compatible": {
       "options": {
@@ -25,8 +25,43 @@
           "name": "OpenJarvis Free Vision",
           "attachment": true,
           "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"]
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "openjarvis-local-code": {
+          "id": "local/code",
+          "name": "OpenJarvis Private Code",
+          "tool_call": true
+        },
+        "openjarvis-local-fast": {
+          "id": "local/fast",
+          "name": "OpenJarvis Private Fast",
+          "tool_call": true
+        },
+        "openjarvis-local-research": {
+          "id": "local/research",
+          "name": "OpenJarvis Private Research",
+          "tool_call": true
+        },
+        "openjarvis-local-vision": {
+          "id": "local/vision",
+          "name": "OpenJarvis Private Vision",
+          "tool_call": true,
+          "attachment": true,
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
           }
         }
       }

@@ -318,6 +318,9 @@ class GuardrailsEngine(InferenceEngine):
         """Delegate to wrapped engine."""
         return self._engine.list_models()
 
+    def can_serve(self, model: str) -> bool:
+        return self._engine.can_serve(model)
+
     def health(self) -> bool:
         """Delegate to wrapped engine."""
         return self._engine.health()

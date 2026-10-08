@@ -49,6 +49,7 @@ def _ensure_builtin_engine_registered(key: str) -> None:
     if engine_cls is not None:
         EngineRegistry.register_value(key, engine_cls)
 
+
 _HOST_MAP: Dict[str, str | None] = {
     "ollama": "ollama_host",
     "vllm": "vllm_host",
@@ -99,6 +100,12 @@ def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
         )
 
     # afm: in-process engine, configured by behaviour rather than a host
+    if key == "ollama":
+        return cls(
+            host=config.engine.ollama.host or None,
+            num_ctx=config.engine.ollama.num_ctx or None,
+        )
+
     if key == "afm":
         cfg = config.engine.afm
         return cls(
@@ -239,6 +246,15 @@ def get_engine(
 
     Returns ``(key, engine_instance)`` or ``None`` if no engine is available.
     """
+
+    if model and model.startswith(("free/", "local/")):
+        from openjarvis.intelligence.free_pool import FreePoolEngine
+
+        engines = discover_engines(config)
+        if engine_key:
+            engines = [(key, engine) for key, engine in engines if key == engine_key]
+        pool = FreePoolEngine(engines, allow_remote=not model.startswith("local/"))
+        return ("free-pool", pool) if pool.can_serve(model) else None
 
     def _usable(engine: InferenceEngine) -> bool:
         return engine.health() and (model is None or engine.can_serve(model))

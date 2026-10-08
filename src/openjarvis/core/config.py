@@ -369,6 +369,7 @@ class OllamaEngineConfig:
     """Per-engine config for Ollama."""
 
     host: str = ""
+    num_ctx: int = 0  # 0 preserves the engine default; personal CPU preset uses 4096.
 
 
 @dataclass(slots=True)
@@ -634,6 +635,8 @@ class IntelligenceConfig:
     model_short: str = ""
     model_long: str = ""
     model_code: str = ""
+    private_routing: bool = False  # Enabled by the personal control-plane preset.
+    allow_private_remote: bool = False  # Authorize sending private context.
     fallback_model: str = ""
     model_path: str = ""  # Local weights (HF repo, GGUF file, etc.)
     checkpoint_path: str = ""  # Checkpoint/adapter path
@@ -1170,9 +1173,7 @@ class ProjectsConfig:
         )
     )
     cleanup_report_path: str = field(
-        default_factory=lambda: str(
-            get_data_dir() / "registry" / "cleanup-report.json"
-        )
+        default_factory=lambda: str(get_data_dir() / "registry" / "cleanup-report.json")
     )
     duplicate_report_path: str = field(
         default_factory=lambda: str(

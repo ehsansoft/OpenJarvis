@@ -94,21 +94,14 @@ def _run_research(
     from openjarvis.connectors.embeddings import OllamaEmbedder
     from openjarvis.connectors.hybrid_search import HybridSearch
     from openjarvis.connectors.store import KnowledgeStore
-    from openjarvis.engine.ollama import OllamaEngine
 
     store_kwargs: dict = {}
     if knowledge_db:
         store_kwargs["db_path"] = knowledge_db
     store = KnowledgeStore(**store_kwargs)
 
-    # Research mode is wired specifically to Ollama: the planner prompt
-    # (gemma4:31b) and the function-call schema for search/clarify both
-    # assume Ollama's /api/chat tool semantics. Using the engine returned
-    # by get_engine() here is a foot-gun — discovery can pick any
-    # OpenAI-compatible engine registered on the same port as our own
-    # API server. research_router.py hardcodes OllamaEngine() for the
-    # same reason; mirror that here so CLI and HTTP behave identically.
-    engine = OllamaEngine()
+    # Keep the caller's protected engine: private chunks must not rediscover
+    # a remote planner after the privacy boundary has already been applied.
 
     chunk_count = store._conn.execute(
         "SELECT COUNT(*) FROM knowledge_chunks"
@@ -197,6 +190,7 @@ def _run_research(
         search=HybridSearch(store, embedder),
         model=planner_model,
         on_event=on_event,
+        num_ctx=(config.engine.ollama.num_ctx or 16384) if config else 16384,
     )
 
     started = time.monotonic()
@@ -964,6 +958,9 @@ def ask(
         sys.exit(1)
 
     engine_name, engine = resolved
+    from openjarvis.engine.privacy import personal_engine
+
+    engine = personal_engine(config, engine, engine_name)
 
     # ------------------------------------------------------------------
     # Research mode — hybrid search + agentic loop over the knowledge store

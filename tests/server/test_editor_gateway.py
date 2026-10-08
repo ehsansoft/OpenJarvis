@@ -94,3 +94,25 @@ def test_editor_gateway_lists_stable_aliases() -> None:
     model_ids = [item["id"] for item in response.json()["data"]]
     assert "free/code" in model_ids
     assert "free/research" in model_ids
+
+
+def test_editor_gateway_uses_public_engine_while_personal_route_stays_private():
+    personal = _engine()
+    public = _engine()
+    public.generate.return_value["content"] = "public response"
+    public.list_models.return_value = ["free/code", "local/code"]
+    app = create_app(personal, "local/code", router_engine=public, config=_config())
+    client = TestClient(app)
+    response = client.post(
+        "/router/v1/chat/completions",
+        json={
+            "model": "free/code",
+            "messages": [{"role": "user", "content": "synthetic public question"}],
+        },
+    )
+    assert response.json()["choices"][0]["message"]["content"] == "public response"
+    public.generate.assert_called_once()
+    personal.generate.assert_not_called()
+    assert "local/code" in {
+        m["id"] for m in client.get("/router/v1/models").json()["data"]
+    }
