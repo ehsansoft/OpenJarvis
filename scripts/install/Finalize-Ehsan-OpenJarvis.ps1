@@ -65,7 +65,7 @@ try {
 }
 
 Write-Host ""
-Write-Host "OpenJarvis alpha.4.2 setup is finalized." -ForegroundColor Green
+Write-Host "OpenJarvis alpha.4.3 setup is finalized." -ForegroundColor Green
 Write-Host "Start server: D:\AI-Tools\OpenJarvis\scripts\install\Start-Ehsan-OpenJarvis.cmd"
 Write-Host "Editor API: http://127.0.0.1:8000/router/v1"
 Write-Host "Model alias: free/code"
