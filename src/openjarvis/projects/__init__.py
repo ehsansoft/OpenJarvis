@@ -18,6 +18,7 @@ from openjarvis.projects.inventory import (
 from openjarvis.projects.machine_inventory import (
     MachineInventory,
     detect_ollama,
+    detect_voicebox,
     detect_package_caches,
     detect_runtime_managers,
     detect_toolchain,
@@ -45,6 +46,7 @@ __all__ = [
     "write_inventory",
     "MachineInventory",
     "detect_ollama",
+    "detect_voicebox",
     "detect_package_caches",
     "detect_runtime_managers",
     "detect_toolchain",
