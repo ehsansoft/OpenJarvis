@@ -269,6 +269,7 @@ class StreamableHTTPTransport(MCPTransport):
         url: str,
         *,
         token: Optional[str] = None,
+        headers: Optional[dict[str, str]] = None,
         connect_timeout: float = 10.0,
         request_timeout: float = 60.0,
     ) -> None:
@@ -276,6 +277,7 @@ class StreamableHTTPTransport(MCPTransport):
 
         self._url = url
         self._token = token
+        self._extra_headers = dict(headers or {})
         self._session_id: Optional[str] = None
         self._client = httpx.Client(
             timeout=httpx.Timeout(
@@ -306,6 +308,7 @@ class StreamableHTTPTransport(MCPTransport):
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
+            **self._extra_headers,
         }
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
