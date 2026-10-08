@@ -365,6 +365,148 @@ def _component_version(path: Path, args: list[str]) -> str:
     return _run(str(path), args)
 
 
+def _read_small_text(path: Path, limit: int = 512 * 1024) -> str:
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(limit)
+    except OSError:
+        return ""
+    return raw.decode("utf-8", errors="replace")
+
+
+def _wamp_active_versions(root: Path) -> dict[str, str]:
+    active: dict[str, str] = {}
+    keys = {
+        "phpVersion": "php",
+        "apacheVersion": "apache",
+        "mysqlVersion": "mysql",
+        "mariadbVersion": "mariadb",
+    }
+    for name in ("wampmanager.conf", "wampmanager.ini"):
+        path = root / name
+        if not path.is_file():
+            continue
+        text = _read_small_text(path)
+        for raw_key, normalized in keys.items():
+            match = __import__("re").search(
+                rf"(?im)^\s*{raw_key}\s*=\s*[\"']?([^\"'\r\n;]+)",
+                text,
+            )
+            if match:
+                active[normalized] = match.group(1).strip()
+    return active
+
+
+def _wamp_virtual_hosts(root: Path) -> list[dict[str, Any]]:
+    import re
+
+    results: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for path in sorted(
+        root.glob("bin/apache/apache*/conf/extra/httpd-vhosts.conf")
+    ):
+        text = _read_small_text(path, limit=2 * 1024 * 1024)
+        for block in re.findall(
+            r"(?is)<VirtualHost\b[^>]*>(.*?)</VirtualHost>",
+            text,
+        ):
+            name_match = re.search(r"(?im)^\s*ServerName\s+([^\s#]+)", block)
+            root_match = re.search(
+                r'(?im)^\s*DocumentRoot\s+["\']?([^"\'\r\n#]+)',
+                block,
+            )
+            aliases = re.findall(
+                r"(?im)^\s*ServerAlias\s+([^#\r\n]+)",
+                block,
+            )
+            server_name = name_match.group(1).strip() if name_match else ""
+            document_root = (
+                root_match.group(1).strip().rstrip('"')
+                if root_match
+                else ""
+            )
+            if not server_name and not document_root:
+                continue
+            key = (server_name.lower(), document_root.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(
+                {
+                    "server_name": server_name,
+                    "document_root": document_root,
+                    "aliases": [
+                        item
+                        for line in aliases
+                        for item in line.split()
+                        if item
+                    ],
+                    "config": str(path),
+                }
+            )
+            if len(results) >= 200:
+                return results
+    return results
+
+
+def _windows_hosts_entries() -> list[dict[str, Any]]:
+    if os.name != "nt":
+        return []
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    hosts = Path(system_root) / "System32" / "drivers" / "etc" / "hosts"
+    text = _read_small_text(hosts, limit=256 * 1024)
+    entries: list[dict[str, Any]] = []
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        entries.append({"address": parts[0], "names": parts[1:]})
+    return entries[:500]
+
+
+def _service_state(service_name: str) -> str:
+    if os.name != "nt":
+        return ""
+    output = _run_full("sc.exe", ["query", service_name], timeout=5)
+    for line in output.splitlines():
+        if "STATE" in line and ":" in line:
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
+def _port_open(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
+def _wamp_wordpress_sites(root: Path, vhosts: list[dict[str, Any]]) -> list[str]:
+    sites: set[str] = set()
+    www = root / "www"
+    if www.is_dir():
+        try:
+            children = list(www.iterdir())
+        except OSError:
+            children = []
+        for child in children[:1000]:
+            if child.is_dir() and (child / "wp-config.php").is_file():
+                sites.add(str(child))
+
+    for item in vhosts:
+        raw = str(item.get("document_root", "")).strip()
+        if not raw:
+            continue
+        candidate = Path(raw.replace("/", os.sep))
+        if (candidate / "wp-config.php").is_file():
+            sites.add(str(candidate))
+    return sorted(sites, key=str.lower)
+
+
 def detect_wampserver() -> dict[str, Any]:
     roots = [root for root in _candidate_wamp_roots() if root.exists()]
     components: list[WampComponent] = []
@@ -378,6 +520,9 @@ def detect_wampserver() -> dict[str, Any]:
         ("mariadb-server", "bin/mariadb/mariadb*/bin/mariadbd.exe", ["--version"]),
     )
 
+    active_versions: dict[str, str] = {}
+    virtual_hosts: list[dict[str, Any]] = []
+    wordpress_sites: set[str] = set()
     for root in roots:
         for kind, pattern, args in patterns:
             for path in sorted(root.glob(pattern)):
@@ -388,11 +533,38 @@ def detect_wampserver() -> dict[str, Any]:
                         version=_component_version(path, args),
                     )
                 )
+        active_versions.update(_wamp_active_versions(root))
+        root_vhosts = _wamp_virtual_hosts(root)
+        virtual_hosts.extend(root_vhosts)
+        wordpress_sites.update(_wamp_wordpress_sites(root, root_vhosts))
+
+    services = {
+        name: state
+        for name in (
+            "wampapache64",
+            "wampapache",
+            "wampmysqld64",
+            "wampmysqld",
+            "wampmariadb64",
+            "wampmariadb",
+        )
+        if (state := _service_state(name))
+    }
 
     return {
         "detected": bool(roots),
         "roots": [str(root) for root in roots],
         "components": [item.to_dict() for item in components],
+        "active_versions": active_versions,
+        "virtual_hosts": virtual_hosts[:500],
+        "wordpress_sites": sorted(wordpress_sites, key=str.lower),
+        "hosts_entries": _windows_hosts_entries(),
+        "services": services,
+        "ports": {
+            "80": _port_open(80),
+            "443": _port_open(443),
+            "3306": _port_open(3306),
+        },
     }
 
 
