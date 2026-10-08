@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Tuple
@@ -13,6 +14,42 @@ from openjarvis.engine._base import InferenceEngine
 logger = logging.getLogger(__name__)
 
 # Map registry keys to config host attribute (None = no host arg)
+_BUILTIN_ENGINE_MODULES: dict[str, str] = {
+    "nararouter": "openjarvis.engine.nararouter",
+    "nim": "openjarvis.engine.nim",
+    "ollama": "openjarvis.engine.ollama",
+    "vllm": "openjarvis.engine.openai_compat_engines",
+    "llamacpp": "openjarvis.engine.openai_compat_engines",
+    "sglang": "openjarvis.engine.openai_compat_engines",
+    "mlx": "openjarvis.engine.openai_compat_engines",
+    "lmstudio": "openjarvis.engine.openai_compat_engines",
+    "exo": "openjarvis.engine.openai_compat_engines",
+    "nexa": "openjarvis.engine.openai_compat_engines",
+    "uzu": "openjarvis.engine.openai_compat_engines",
+    "apple_fm": "openjarvis.engine.openai_compat_engines",
+    "lemonade": "openjarvis.engine.openai_compat_engines",
+}
+
+
+def _ensure_builtin_engine_registered(key: str) -> None:
+    """Re-register a known built-in after registry resets.
+
+    Normal application startup imports :mod:`openjarvis.engine` once and its
+    decorators populate the registry. Test isolation and long-lived plugin
+    hosts can deliberately clear registries after those modules are already
+    cached, making a later _make_engine() fail with a misleading KeyError.
+    Reload only the requested known built-in when that happens.
+    """
+    if EngineRegistry.contains(key):
+        return
+    module_name = _BUILTIN_ENGINE_MODULES.get(key)
+    if not module_name:
+        return
+    module = importlib.import_module(module_name)
+    if not EngineRegistry.contains(key):
+        importlib.reload(module)
+
+
 _HOST_MAP: Dict[str, str | None] = {
     "ollama": "ollama_host",
     "vllm": "vllm_host",
@@ -36,6 +73,7 @@ _HOST_MAP: Dict[str, str | None] = {
 
 def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
     """Instantiate a registered engine with the appropriate config host."""
+    _ensure_builtin_engine_registered(key)
     cls = EngineRegistry.get(key)
 
     # LiteLLM cannot enumerate every model supported by every provider.  Its
