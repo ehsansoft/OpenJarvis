@@ -146,6 +146,9 @@ class SystemBuilder:
 
         engine, engine_key = self._resolve_engine(config)
         model = self._resolve_model(config, engine)
+        from openjarvis.engine.privacy import personal_engine
+
+        engine = personal_engine(config, engine, engine_key)
 
         telemetry_enabled = (
             self._telemetry if self._telemetry is not None else config.telemetry.enabled
@@ -365,6 +368,8 @@ class SystemBuilder:
         system._mcp_clients = list(getattr(self, "_mcp_clients", []))
         if system.agent_executor is not None:
             system.agent_executor.set_system(system)
+        if system.scheduler is not None:
+            system.scheduler.set_system(system)
         return system
 
     def _resolve_engine(self, config: JarvisConfig):

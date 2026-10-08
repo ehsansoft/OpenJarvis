@@ -175,6 +175,11 @@ class TelegramChannel(BaseChannel):
             # for backwards compatibility with legacy callers that passed the
             # chat id via ``conversation_id``.
             chat_id = channel or conversation_id
+            allowed = {
+                cid.strip() for cid in self._allowed_chat_ids.split(",") if cid.strip()
+            }
+            if allowed and chat_id not in allowed:
+                return False
             reply_to = conversation_id if (channel and conversation_id) else ""
             chunks = textwrap.wrap(
                 content,
@@ -231,6 +236,27 @@ class TelegramChannel(BaseChannel):
     def status(self) -> ChannelStatus:
         """Return the current connection status."""
         return self._status
+
+    def dispatch_message(self, message: ChannelMessage) -> bool:
+        """Apply the inbound allow-list at the canonical adapter boundary."""
+        allowed = {
+            cid.strip() for cid in self._allowed_chat_ids.split(",") if cid.strip()
+        }
+        if allowed and message.conversation_id not in allowed:
+            return False
+        for handler in self._handlers:
+            handler(message)
+        if self._bus is not None:
+            self._bus.publish(
+                EventType.CHANNEL_MESSAGE_RECEIVED,
+                {
+                    "channel": message.channel,
+                    "sender": message.sender,
+                    "content": message.content,
+                    "message_id": message.message_id,
+                },
+            )
+        return True
 
     def list_channels(self) -> List[str]:
         """Return available channel identifiers."""
@@ -394,34 +420,8 @@ class TelegramChannel(BaseChannel):
                     message_id=str(msg.message_id),
                     conversation_id=str(msg.chat.id),
                 )
-                # Enforce allow-list when configured
-                if self._allowed_chat_ids:
-                    _allowed = {
-                        cid.strip()
-                        for cid in self._allowed_chat_ids.split(",")
-                        if cid.strip()
-                    }
-                    if cm.conversation_id not in _allowed:
-                        logger.debug(
-                            "Ignoring message from unlisted chat %s",
-                            cm.conversation_id,
-                        )
-                        return
-                for handler in self._handlers:
-                    try:
-                        handler(cm)
-                    except Exception:
-                        logger.exception("Telegram handler error")
-                if self._bus is not None:
-                    self._bus.publish(
-                        EventType.CHANNEL_MESSAGE_RECEIVED,
-                        {
-                            "channel": cm.channel,
-                            "sender": cm.sender,
-                            "content": cm.content,
-                            "message_id": cm.message_id,
-                        },
-                    )
+                # Never block the polling event loop on inference or a reply.
+                await asyncio.to_thread(self.dispatch_message, cm)
 
             app.add_handler(MessageHandler(filters.TEXT, _handle_msg))
             loop.run_until_complete(self._run_polling_lifecycle(app, async_stop_event))

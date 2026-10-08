@@ -277,14 +277,17 @@ def test_executor_receives_required_system_attrs(tmp_path, monkeypatch):
 
 
 def test_channel_system_receives_remote_security_primitives(tmp_path, monkeypatch):
-    from openjarvis.system import JarvisSystem
+    from openjarvis.server.channel_bridge import ChannelBridge
 
     captured = {}
 
-    def _capture_wire(self, channel):
-        captured["system"] = self
+    original_init = ChannelBridge.__init__
 
-    monkeypatch.setattr(JarvisSystem, "wire_channel", _capture_wire)
+    def _capture_bridge(self, *args, **kwargs):
+        captured["system"] = kwargs["system"]
+        original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(ChannelBridge, "__init__", _capture_bridge)
     policy = object()
     limiter = object()
     audit = object()
