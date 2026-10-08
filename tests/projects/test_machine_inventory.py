@@ -8,6 +8,7 @@ from unittest import mock
 from openjarvis.projects.machine_inventory import (
     ToolInstallation,
     analyze_machine_inventory,
+    detect_hardware,
     detect_voicebox,
     detect_wampserver,
 )
@@ -95,6 +96,7 @@ def test_voicebox_detects_registered_and_loaded_models() -> None:
     assert result["model_count"] == 4
     assert result["downloaded_count"] == 3
     assert result["loaded_count"] == 3
+    assert result["available_count"] == 3
     assert "kokoro" in result["loaded_models"]
     assert "whisper-base" in result["downloaded_models"]
 
@@ -109,6 +111,114 @@ def test_voicebox_unreachable_is_nonfatal() -> None:
     assert result["reachable"] is False
     assert result["models"] == []
     assert "connection refused" in result["error"]
+
+
+def test_voicebox_infers_engine_category_and_loaded_availability() -> None:
+    def fake_http(url: str, *, timeout: float = 4.0):
+        if url.endswith("/health"):
+            return {"status": "healthy"}
+        if url.endswith("/models/status"):
+            return {
+                "models": [
+                    {
+                        "model_name": "whisper-base",
+                        "display_name": "Whisper Base",
+                        "hf_repo_id": "openai/whisper-base",
+                        "downloaded": False,
+                        "loaded": True,
+                    },
+                    {
+                        "model_name": "qwen3-0.6b",
+                        "display_name": "Qwen3 0.6B",
+                        "hf_repo_id": "Qwen/Qwen3-0.6B",
+                        "downloaded": False,
+                        "loaded": True,
+                    },
+                    {
+                        "model_name": "kokoro",
+                        "display_name": "Kokoro 82M",
+                        "hf_repo_id": "hexgrad/Kokoro-82M",
+                        "downloaded": True,
+                        "loaded": False,
+                    },
+                ]
+            }
+        raise AssertionError(url)
+
+    with (
+        mock.patch(
+            "openjarvis.projects.machine_inventory._http_json",
+            side_effect=fake_http,
+        ),
+        mock.patch(
+            "openjarvis.projects.machine_inventory._voicebox_storage_roots",
+            return_value=[],
+        ),
+        mock.patch(
+            "openjarvis.projects.machine_inventory._detect_port_listeners",
+            return_value=[{"LocalAddress": "0.0.0.0"}],
+        ),
+    ):
+        result = detect_voicebox("http://127.0.0.1:17493")
+
+    by_name = {item["model_name"]: item for item in result["models"]}
+    assert by_name["whisper-base"]["engine"] == "whisper"
+    assert by_name["whisper-base"]["category"] == "stt"
+    assert by_name["qwen3-0.6b"]["engine"] == "qwen_llm"
+    assert by_name["qwen3-0.6b"]["category"] == "llm"
+    assert by_name["kokoro"]["category"] == "tts"
+    assert result["available_count"] == 3
+    assert result["exposed_all_interfaces"] is True
+    assert len(result["state_inconsistencies"]) == 2
+
+
+def test_detect_hardware_uses_windows_inventory() -> None:
+    responses = [
+        {
+            "Name": "Example CPU",
+            "NumberOfCores": 8,
+            "NumberOfLogicalProcessors": 16,
+            "MaxClockSpeed": 4000,
+        },
+        {
+            "Manufacturer": "Example",
+            "Model": "PC",
+            "TotalPhysicalMemory": 32 * 1024**3,
+        },
+        {
+            "Name": "Example GPU",
+            "AdapterRAM": 8 * 1024**3,
+            "DriverVersion": "1.2.3",
+            "VideoProcessor": "GPU",
+        },
+        {
+            "DeviceID": "D:",
+            "VolumeName": "Data",
+            "FileSystem": "NTFS",
+            "Size": 1_000_000,
+            "FreeSpace": 500_000,
+        },
+    ]
+    with (
+        mock.patch(
+            "openjarvis.projects.machine_inventory.os.name",
+            "nt",
+        ),
+        mock.patch(
+            "openjarvis.projects.machine_inventory._powershell_json",
+            side_effect=responses,
+        ),
+        mock.patch(
+            "openjarvis.projects.machine_inventory._where_all",
+            return_value=[],
+        ),
+    ):
+        result = detect_hardware()
+
+    assert result["cpu"][0]["Name"] == "Example CPU"
+    assert result["memory"]["TotalPhysicalMemory"] == 32 * 1024**3
+    assert result["gpus"][0]["Name"] == "Example GPU"
+    assert result["disks"][0]["DeviceID"] == "D:"
 
 
 def test_wamp_detection_maps_versions_vhosts_and_wordpress(
@@ -169,6 +279,7 @@ def test_wamp_detection_maps_versions_vhosts_and_wordpress(
     assert result["active_versions"]["apache"] == "2.4.62"
     assert result["virtual_hosts"][0]["server_name"] == "demo.local"
     assert str(site) in result["wordpress_sites"]
+    assert len(result["wordpress_sites"]) == 1
 
 
 def test_wamp_detection_finds_runtime_components(tmp_path: Path) -> None:
