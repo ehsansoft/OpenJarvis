@@ -369,6 +369,7 @@ class OllamaEngineConfig:
     """Per-engine config for Ollama."""
 
     host: str = ""
+    num_ctx: int = 0  # 0 preserves the engine default; personal CPU preset uses 4096.
 
 
 @dataclass(slots=True)
@@ -473,6 +474,18 @@ class LemonadeEngineConfig:
     host: str = "http://localhost:13305"
 
 
+@dataclass(slots=True)
+class NaraRouterEngineConfig:
+    """Per-engine config for NaraRouter.
+
+    API credentials are deliberately read from NARAROUTER_API_KEY rather than
+    stored in config.toml.
+    """
+
+    host: str = "https://router.bynara.id"
+    free_only: bool = True
+
+
 @dataclass
 class EngineConfig:
     """Inference engine settings with nested per-engine configs."""
@@ -491,6 +504,7 @@ class EngineConfig:
     afm: AfmEngineConfig = field(default_factory=AfmEngineConfig)
     gemma_cpp: GemmaCppEngineConfig = field(default_factory=GemmaCppEngineConfig)
     lemonade: LemonadeEngineConfig = field(default_factory=LemonadeEngineConfig)
+    nararouter: NaraRouterEngineConfig = field(default_factory=NaraRouterEngineConfig)
 
     # Backward-compat properties for old flat attribute names
     @property
@@ -601,6 +615,15 @@ class EngineConfig:
     def lemonade_host(self, value: str) -> None:
         self.lemonade.host = value
 
+    @property
+    def nararouter_host(self) -> str:
+        """Deprecated-style property; prefer engine.nararouter.host."""
+        return self.nararouter.host
+
+    @nararouter_host.setter
+    def nararouter_host(self, value: str) -> None:
+        self.nararouter.host = value
+
 
 @dataclass(slots=True)
 class IntelligenceConfig:
@@ -612,6 +635,8 @@ class IntelligenceConfig:
     model_short: str = ""
     model_long: str = ""
     model_code: str = ""
+    private_routing: bool = False  # Enabled by the personal control-plane preset.
+    allow_private_remote: bool = False  # Authorize sending private context.
     fallback_model: str = ""
     model_path: str = ""  # Local weights (HF repo, GGUF file, etc.)
     checkpoint_path: str = ""  # Checkpoint/adapter path
@@ -1126,6 +1151,40 @@ class ToolsConfig:
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     weather: WeatherToolConfig = field(default_factory=WeatherToolConfig)
     enabled: str = ""  # comma-separated default tools
+
+
+@dataclass(slots=True)
+class ProjectsConfig:
+    """Local project-fabric discovery settings."""
+
+    root: str = ""
+    registry_path: str = field(
+        default_factory=lambda: str(get_data_dir() / "registry" / "projects.json")
+    )
+    inventory_root: str = ""
+    inventory_path: str = field(
+        default_factory=lambda: str(
+            get_data_dir() / "registry" / "drive-inventory.json"
+        )
+    )
+    machine_inventory_path: str = field(
+        default_factory=lambda: str(
+            get_data_dir() / "registry" / "machine-inventory.json"
+        )
+    )
+    cleanup_report_path: str = field(
+        default_factory=lambda: str(get_data_dir() / "registry" / "cleanup-report.json")
+    )
+    duplicate_report_path: str = field(
+        default_factory=lambda: str(
+            get_data_dir() / "registry" / "duplicate-report.json"
+        )
+    )
+    max_depth: int = 4
+    inventory_max_files: int = 2_000_000
+    duplicate_min_size_mb: int = 1
+    cleanup_min_age_days: int = 30
+    voicebox_host: str = "http://127.0.0.1:17493"
 
 
 @dataclass
@@ -1769,6 +1828,7 @@ class JarvisConfig:
     deep_research: DeepResearchConfig = field(default_factory=DeepResearchConfig)
     learning: LearningConfig = field(default_factory=LearningConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
+    projects: ProjectsConfig = field(default_factory=ProjectsConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
@@ -2070,8 +2130,12 @@ def load_config(path: Optional[Path] = None) -> JarvisConfig:
         config_path = get_config_path()
     cfg._config_dir = config_path.parent
     if config_path.exists():
-        with open(config_path, "rb") as fh:
-            data = tomllib.load(fh)
+        # Windows PowerShell 5.1 writes a UTF-8 BOM for "-Encoding utf8".
+        # TOML itself is UTF-8, but Python's tomllib rejects U+FEFF at the
+        # first character. Decode with utf-8-sig so both BOM and BOM-less
+        # config files are accepted.
+        raw_config = config_path.read_bytes()
+        data = tomllib.loads(raw_config.decode("utf-8-sig"))
 
         # Run backward-compat migrations before applying
         _migrate_toml_data(data, cfg)
@@ -2091,6 +2155,7 @@ def load_config(path: Optional[Path] = None) -> JarvisConfig:
             "security",
             "channel",
             "tools",
+            "projects",
             "sandbox",
             "scheduler",
             "workflow",

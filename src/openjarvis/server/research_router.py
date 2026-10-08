@@ -117,6 +117,18 @@ def _build_planner_engine(
         active_model=active_model,
         request_model=request_model,
     )
+    if (
+        config.intelligence.private_routing
+        and not config.intelligence.allow_private_remote
+    ):
+        from openjarvis.engine.privacy import personal_engine
+
+        protected = personal_engine(config, active_engine, active_engine_key)
+        if not protected.can_serve(model):
+            raise RuntimeError(
+                "Private research requires an installed local model or local/* alias"
+            )
+        return "private-pool", protected, model
     if active_engine is not None and not config.deep_research.engine.strip():
         if model and not active_engine.can_serve(model):
             raise RuntimeError(
@@ -427,6 +439,7 @@ async def _stream_research(
             model=model,
             clarify_handler=lambda question: _WEB_CLARIFY_RESPONSE,
             on_event=on_event,
+            num_ctx=config.engine.ollama.num_ctx or 16384,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("research: setup failed before agent could run: %s", exc)

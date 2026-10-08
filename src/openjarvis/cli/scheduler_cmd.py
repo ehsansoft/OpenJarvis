@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import signal
-import sys
 from typing import Optional
 
 import click
@@ -52,12 +50,23 @@ def scheduler() -> None:
 )
 @click.option("--agent", default="simple", help="Agent to use for execution.")
 @click.option("--tools", default="", help="Comma-separated tool names.")
+@click.option(
+    "--timezone",
+    "timezone_name",
+    default="UTC",
+    help="IANA cron timezone; stored in UTC.",
+)
+@click.option(
+    "--notify-chat", default="", help="Telegram chat id; requires session opt-in."
+)
 def scheduler_create(
     prompt: str,
     schedule_type: str,
     schedule_value: str,
     agent: str,
     tools: str,
+    timezone_name: str,
+    notify_chat: str,
 ) -> None:
     """Create a new scheduled task."""
     console = Console()
@@ -70,6 +79,14 @@ def scheduler_create(
             schedule_value=schedule_value,
             agent=agent,
             tools=tools,
+            metadata={
+                "timezone": timezone_name,
+                **(
+                    {"notify": {"channel": "telegram", "chat_id": notify_chat}}
+                    if notify_chat
+                    else {}
+                ),
+            },
         )
         console.print(f"[green]Created task {task.id}[/green]")
         console.print(f"  Type: {task.schedule_type}")
@@ -226,12 +243,12 @@ def scheduler_logs(task_id: str, limit: int) -> None:
     default=False,
     help="Print what would run without executing.",
 )
-def scheduler_run_task(agent_name: str, dry_run: bool) -> None:
+@click.pass_context
+def scheduler_run_task(ctx: click.Context, agent_name: str, dry_run: bool) -> None:
     """Immediately execute the active task for AGENT_NAME.
 
     Finds the first active scheduled task whose agent matches AGENT_NAME
-    and runs it right now — useful for testing and for launchd invocation
-    when OpenJarvis is not running as a persistent daemon.
+    and delegates execution to the running server's scheduler.
 
     Example (launchd plist ProgramArguments):
         jarvis scheduler run-task proactive
@@ -257,37 +274,7 @@ def scheduler_run_task(agent_name: str, dry_run: bool) -> None:
             console.print(f"  Prompt: {match.prompt[:80]}")
             return
 
-        console.print(f"Running task [cyan]{match.id}[/cyan] (agent: {match.agent})…")
-
-        from openjarvis.core.config import load_config
-        from openjarvis.system import SystemBuilder
-
-        system = SystemBuilder(load_config()).build()
-        result = system.ask(match.prompt, agent=match.agent)
-
-        # Log the run result in the scheduler store
-        from datetime import datetime, timezone
-
-        if isinstance(result, (dict, list)):
-            import json as _json
-
-            result_str = _json.dumps(result, default=str)
-        else:
-            result_str = str(result) if result is not None else ""
-
-        now = datetime.now(timezone.utc).isoformat()
-        store.log_run(
-            task_id=match.id,
-            started_at=now,
-            finished_at=now,
-            success=True,
-            result=result_str,
-            error="",
-        )
-
-        console.print("[green]Done.[/green]")
-        if result:
-            console.print(result)
+        ctx.invoke(scheduler_run, task_id=match.id)
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
         raise SystemExit(1)
@@ -302,35 +289,41 @@ def scheduler_run_task(agent_name: str, dry_run: bool) -> None:
     type=int,
     help="Seconds between poll cycles.",
 )
-def scheduler_start(poll_interval: int) -> None:
-    """Start the scheduler daemon (foreground)."""
-    console = Console()
-    store = _get_store()
+@click.pass_context
+def scheduler_start(ctx: click.Context, poll_interval: int) -> None:
+    """Start the canonical server with its task scheduler (never a dry-run daemon)."""
+    import socket
 
-    from openjarvis.scheduler.scheduler import TaskScheduler
+    from openjarvis.cli.serve import serve
+    from openjarvis.core.config import load_config
 
-    sched = TaskScheduler(store, poll_interval=poll_interval)
-    sched.start()
-    console.print(
-        f"[green]Scheduler running (poll every {poll_interval}s). "
-        "Press Ctrl+C to stop.[/green]"
+    config = load_config()
+    with socket.socket() as probe:
+        if probe.connect_ex((config.server.host, config.server.port)) == 0:
+            raise click.ClickException(
+                "A server already owns this endpoint. Restart that server with "
+                "'jarvis serve --scheduler'; do not start a second process."
+            )
+    ctx.invoke(serve, enable_scheduler=True, scheduler_poll_interval=poll_interval)
+
+
+@scheduler.command("run")
+@click.argument("task_id")
+def scheduler_run(task_id: str) -> None:
+    """Execute an existing scheduled task through the running server."""
+    import os
+
+    import httpx
+
+    from openjarvis.core.config import load_config
+
+    config = load_config()
+    key = os.environ.get("OPENJARVIS_API_KEY", "")
+    response = httpx.post(
+        f"http://{config.server.host}:{config.server.port}/v1/scheduler/tasks/{task_id}/run",
+        headers={"Authorization": f"Bearer {key}"} if key else {},
+        timeout=300,
     )
-
-    def _handle_signal(signum: int, frame: object) -> None:
-        sched.stop()
-        store.close()
-        console.print("\n[yellow]Scheduler stopped.[/yellow]")
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, _handle_signal)
-    signal.signal(signal.SIGTERM, _handle_signal)
-
-    # Block main thread until the daemon thread dies
-    try:
-        signal.pause()
-    except AttributeError:
-        # signal.pause() not available on Windows
-        import time
-
-        while True:
-            time.sleep(1)
+    if not response.is_success:
+        raise click.ClickException(f"Scheduler returned HTTP {response.status_code}")
+    click.echo(response.text)

@@ -17,6 +17,13 @@ def test_get_provider_detects_litellm_prefixed_openrouter_id():
     assert cloud_router.get_provider(model) == "openrouter"
 
 
+def test_get_provider_keeps_free_alias_local():
+    assert cloud_router.get_provider("free/code") is None
+    assert cloud_router.is_cloud_model("free/research") is False
+    assert cloud_router.is_cloud_model("local/fast") is False
+    assert cloud_router.is_cloud_model("local/research") is False
+
+
 @pytest.mark.parametrize(
     "requested_model,expected_forwarded_model",
     [

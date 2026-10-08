@@ -30,9 +30,24 @@ def model() -> None:
     """Manage language models."""
 
 
+@model.command("nara-key")
+def nara_key() -> None:
+    """Securely persist the NaraRouter API key for CLI/server restarts."""
+    from openjarvis.core.credentials import save_credential
+
+    value = click.prompt("NaraRouter API key", hide_input=True).strip()
+    if not value:
+        raise click.ClickException("API key cannot be empty.")
+    save_credential("nararouter", "NARAROUTER_API_KEY", value)
+    click.echo("Saved NARAROUTER_API_KEY in the local OpenJarvis credential store.")
+
+
 @model.command("list")
 def list_models() -> None:
     """List available models from running engines."""
+    from openjarvis.core.credentials import inject_credentials
+
+    inject_credentials()
     console = Console()
     config = load_config()
     register_builtin_models()
@@ -48,6 +63,17 @@ def list_models() -> None:
     all_models = discover_models(engines)
     for ek, model_ids in all_models.items():
         merge_discovered_models(ek, model_ids)
+
+    # Surface stable free/* aliases alongside concrete engine models.
+    try:
+        from openjarvis.intelligence.free_pool import FreePoolEngine
+
+        free_pool = FreePoolEngine(engines)
+        if free_pool.health():
+            all_models["free-pool"] = free_pool.list_models()
+            merge_discovered_models("free-pool", all_models["free-pool"])
+    except Exception:
+        pass
 
     table = Table(title="Available Models")
     table.add_column("Engine", style="cyan")
@@ -80,6 +106,61 @@ def list_models() -> None:
             table.add_row(engine_key, mid, params, active, ctx, vram, arch)
 
     console.print(table)
+
+
+@model.command("free")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+def free_models(as_json: bool) -> None:
+    """Show the live zero-API-cost model pool and stable aliases."""
+    import json
+
+    from openjarvis.core.credentials import inject_credentials
+    from openjarvis.intelligence.free_pool import FreePoolEngine
+
+    inject_credentials()
+    console = Console()
+    config = load_config()
+    engines = discover_engines(config)
+    pool = FreePoolEngine(engines)
+
+    payload = {
+        "aliases": pool.list_models(),
+        "candidates": [candidate.to_dict() for candidate in pool.candidates],
+    }
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    if not payload["candidates"]:
+        console.print(
+            "[yellow]No zero-API-cost models detected.[/yellow] "
+            "Start a local engine or configure NARAROUTER_API_KEY."
+        )
+        return
+
+    table = Table(title="Free Model Pool")
+    table.add_column("Engine", style="cyan")
+    table.add_column("Model", style="green")
+    table.add_column("Local", justify="center")
+    table.add_column("Context", justify="right")
+    table.add_column("Capabilities")
+    table.add_column("Evidence", style="dim")
+
+    for candidate in pool.candidates:
+        table.add_row(
+            candidate.engine_key,
+            candidate.model_id,
+            "yes" if candidate.local else "no",
+            (f"{candidate.context_length:,}" if candidate.context_length else "-"),
+            ", ".join(sorted(candidate.capabilities)) or "-",
+            candidate.reason,
+        )
+    console.print(table)
+    console.print(
+        "\nStable aliases: "
+        + ", ".join(payload["aliases"])
+        + "\nUse for editors/API clients, e.g. model=[cyan]free/code[/cyan]."
+    )
 
 
 @model.command()

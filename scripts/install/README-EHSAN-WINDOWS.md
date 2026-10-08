@@ -1,0 +1,149 @@
+# Ehsan OpenJarvis Windows Test Installer
+
+Version: 0.1.0-alpha.4.3
+
+This installer targets the development branch:
+
+`feature/ehsan-control-plane-foundation`
+
+Default layout:
+
+- OpenJarvis code: `D:\AI-Tools\OpenJarvis`
+- OpenJarvis state: `D:\AI-Control\OpenJarvis`
+- projects: `D:\Projects`
+- WampServer auto-detection includes `C:\wamp64`
+
+## Install
+
+1. Extract the installer bundle.
+2. Double-click `Install-Ehsan-OpenJarvis.cmd`.
+3. The installer checks/installs Git and uv with Winget when needed.
+4. uv installs and manages Python 3.13 for the project.
+5. The fork is cloned and the control-plane dependencies are installed.
+6. Initial project and machine scans run automatically.
+
+The installer does not modify WampServer, Ollama models, projects, or user files.
+
+If an earlier alpha is already installed, run `Repair-Ehsan-OpenJarvis.cmd`. Alpha.4 migrates the existing config without replacing it, enables the personal security profile, disables external analytics, connects Voicebox STT and MCP, runs targeted tests, rescans projects with monorepo/cache suppression, and refreshes model and machine evidence.
+
+## Enable NaraRouter free models
+
+Open PowerShell:
+
+```powershell
+cd D:\AI-Tools\OpenJarvis
+uv run jarvis model nara-key
+uv run jarvis model free
+```
+
+The API key is stored in OpenJarvis' local credential store and is not committed.
+
+## First complete scan
+
+Run `First-Run-Scan.cmd`.
+
+It collects:
+
+- config encoding/hash diagnostics (not config contents)
+
+- OpenJarvis doctor output
+- free local/Nara model pool
+- Ollama model inventory
+- Voicebox health + complete `/models/status` inventory (TTS, Whisper/STT, and Voicebox LLM entries)
+- Node/npm/pnpm and developer tool versions/paths
+- NVM/FNM/Volta information
+- package cache locations
+- WampServer components, active versions, vhosts, local WordPress roots, services and ports
+- D:\Projects registry
+- metadata-only D: drive inventory
+- cleanup candidates
+
+Exact duplicate hashing is intentionally not included by default. To include it:
+
+```powershell
+.\First-Run-Scan.ps1 -IncludeDuplicates
+```
+
+The script creates:
+
+`D:\AI-Control\OpenJarvis\support\openjarvis-first-run-YYYYMMDD-HHMMSS.zip`
+
+Attach that ZIP for the next audit. Credentials are excluded.
+
+## Start the server
+
+Double-click `Start-Ehsan-OpenJarvis.cmd`, or run:
+
+```powershell
+cd D:\AI-Tools\OpenJarvis
+uv run jarvis serve
+```
+
+Endpoints:
+
+- personal agent API: `http://127.0.0.1:8000/v1`
+- raw editor/router API: `http://127.0.0.1:8000/router/v1`
+- recommended editor model alias: `free/code`
+
+Do not clean/delete duplicate files until the generated reports have been reviewed.
+
+## Voicebox direct probe
+
+With Voicebox running, double-click `Voicebox-Probe.cmd`. It queries `/health` and `/models/status`, checks port 17493 and the configured D:\\AI-Control HuggingFace cache, then creates a small support ZIP.
+
+
+## Alpha.4 evidence-driven changes
+
+- Voicebox Whisper is preferred for STT while Voicebox is running; Faster-Whisper remains the local fallback.
+- Voicebox MCP is configured at `http://127.0.0.1:17493/mcp` with client id `openjarvis`.
+- Voicebox profiles, cache availability, loaded/downloaded inconsistencies and port exposure are reported.
+- Hardware inventory adds CPU, RAM, GPU/NVIDIA and fixed-disk capacity.
+- Doctor loads saved NaraRouter credentials before health checks.
+- `free/research` and `free/vision` are capability-first; coding remains local-first.
+- Project discovery suppresses cache/package-store roots and collapses nested monorepo packages.
+- Cleanup scans the full root and returns the globally largest candidates instead of the first 500 encountered.
+- WSL version output is normalized; Composer cache discovery uses global config.
+- WampServer WordPress roots are deduplicated case-insensitively.
+
+Keep Voicebox open during repair and first-run if you want the MCP and Whisper bridge verified.
+
+## Alpha.4.1 hotfix
+
+Windows PowerShell 5.1 can leave a stale `$LASTEXITCODE` after a native command executes inside a child scriptblock piped through `ForEach-Object`. Alpha.4 incorrectly interpreted that stale caller value as failure even though `git fetch`, `git switch`, and `git pull` had succeeded. Alpha.4.1 checks required native exit codes immediately inside each step and treats a captured step as successful when it completes without throwing.
+
+## Alpha.4.2 finalization
+
+Alpha.4.2 replaces the fragile PowerShell capture-based repair pipeline with a
+Python subprocess finalizer. Native process return codes are now collected
+directly, avoiding Windows PowerShell 5.1 LASTEXITCODE scope bugs.
+
+It also:
+- canonicalizes Voicebox MCP to `http://127.0.0.1:17493/mcp/`
+- follows local mounted-endpoint redirects for MCP Streamable HTTP
+- verifies all four Voicebox MCP tools directly and through OpenJarvis config
+- smoke-tests `http://127.0.0.1:8000/router/v1/models`
+- copies OpenCode/Kilo templates to the OpenJarvis state directory
+- classifies discovered roots as active/reference/archive instead of treating
+  the large Github-rep reference collection as active work
+- warns on low disk headroom
+- uses a longer NaraRouter health probe to avoid false Doctor warnings
+
+Run `Repair-Ehsan-OpenJarvis.cmd`; it now invokes the deterministic finalizer.
+
+## Alpha.4.3 final setup hotfix
+
+Alpha.4.3 fixes the two Windows test failures observed during real-machine
+finalization:
+
+- the config migration test now expects Voicebox's canonical FastMCP endpoint
+  at `http://127.0.0.1:17493/mcp/`
+- built-in engines are restored lazily after registry isolation/reset, so
+  `nararouter` can always be constructed by discovery
+
+It also keeps rate limiting active with the pure-Python token bucket when the
+optional `openjarvis_rust` extension is not built, adds a useful JSON document
+at `GET /router/v1`, verifies that document during finalization, and always
+creates a ZIP even when final verification fails.
+
+If an older OpenJarvis server is already running on port 8000, stop it with
+Ctrl+C before finalization so the new server code can be verified.

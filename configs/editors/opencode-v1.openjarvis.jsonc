@@ -1,0 +1,51 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openjarvis/local/code",
+  "provider": {
+    "openjarvis": {
+      "name": "OpenJarvis Control Plane",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://127.0.0.1:8000/router/v1"
+      },
+      "models": {
+        "local/code": {
+          "name": "OpenJarvis Private Code",
+          "tool_call": true
+        },
+        "local/fast": {
+          "name": "OpenJarvis Local Fast",
+          "tool_call": true
+        },
+        "local/research": {
+          "name": "OpenJarvis Local Research",
+          "tool_call": true
+        },
+        "local/vision": {
+          "name": "OpenJarvis Local Vision",
+          "attachment": true,
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          }
+        },
+        "free/code": {
+          "name": "OpenJarvis Free Code",
+          "tool_call": true
+        },
+        "free/research": {
+          "name": "OpenJarvis Free Research",
+          "tool_call": true
+        },
+        "free/vision": {
+          "name": "OpenJarvis Free Vision",
+          "attachment": true,
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          }
+        }
+      }
+    }
+  }
+}

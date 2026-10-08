@@ -94,21 +94,14 @@ def _run_research(
     from openjarvis.connectors.embeddings import OllamaEmbedder
     from openjarvis.connectors.hybrid_search import HybridSearch
     from openjarvis.connectors.store import KnowledgeStore
-    from openjarvis.engine.ollama import OllamaEngine
 
     store_kwargs: dict = {}
     if knowledge_db:
         store_kwargs["db_path"] = knowledge_db
     store = KnowledgeStore(**store_kwargs)
 
-    # Research mode is wired specifically to Ollama: the planner prompt
-    # (gemma4:31b) and the function-call schema for search/clarify both
-    # assume Ollama's /api/chat tool semantics. Using the engine returned
-    # by get_engine() here is a foot-gun — discovery can pick any
-    # OpenAI-compatible engine registered on the same port as our own
-    # API server. research_router.py hardcodes OllamaEngine() for the
-    # same reason; mirror that here so CLI and HTTP behave identically.
-    engine = OllamaEngine()
+    # Keep the caller's protected engine: private chunks must not rediscover
+    # a remote planner after the privacy boundary has already been applied.
 
     chunk_count = store._conn.execute(
         "SELECT COUNT(*) FROM knowledge_chunks"
@@ -197,6 +190,7 @@ def _run_research(
         search=HybridSearch(store, embedder),
         model=planner_model,
         on_event=on_event,
+        num_ctx=(config.engine.ollama.num_ctx or 16384) if config else 16384,
     )
 
     started = time.monotonic()
@@ -846,6 +840,11 @@ def ask(
 
     wall_start = time.monotonic() if enable_profile else None
 
+    # Load persisted provider/tool credentials before engine discovery.
+    from openjarvis.core.credentials import inject_credentials
+
+    inject_credentials()
+
     # Load config
     config = load_config()
 
@@ -927,7 +926,22 @@ def ask(
     # -m flag or the configured default; when neither is set we leave it None
     # and a model is chosen per-engine below.
     selection_model = model_name or config.intelligence.default_model or None
-    resolved = get_engine(config, effective_engine_key, model=selection_model)
+
+    # Stable free/* aliases deliberately span engines, so resolve them through
+    # the free pool before the normal single-engine selection path.
+    if model_name and model_name.startswith("free/"):
+        try:
+            from openjarvis.intelligence.free_pool import FreePoolEngine
+
+            free_engines = discover_engines(config)
+            free_pool = FreePoolEngine(free_engines)
+            resolved = ("free-pool", free_pool) if free_pool.health() else None
+        except Exception as exc:
+            logger.debug("Free model pool initialization failed: %s", exc)
+            resolved = None
+    else:
+        resolved = get_engine(config, effective_engine_key, model=selection_model)
+
     if resolved is None:
         console.print(
             "[red bold]No inference engine available.[/red bold]\n\n"
@@ -935,14 +949,18 @@ def ask(
             "  [cyan]ollama serve[/cyan]          — start Ollama\n"
             "  [cyan]vllm serve <model>[/cyan]    — start vLLM\n"
             "  [cyan]llama-server -m <gguf>[/cyan] — start llama.cpp\n\n"
-            "Or set OPENAI_API_KEY / ANTHROPIC_API_KEY for cloud inference.\n\n"
+            "Or configure NARAROUTER_API_KEY for the optional free remote pool.\n\n"
             "[dim]To use a remote engine:[/dim]\n"
-            "  [cyan]jarvis config set engine.ollama.host http://<remote-ip>:11434[/cyan]\n"
+            "  [cyan]jarvis config set engine.ollama.host "
+            "http://<remote-ip>:11434[/cyan]\n"
             "  [dim]or[/dim] [cyan]export OLLAMA_HOST=http://<remote-ip>:11434[/cyan]"
         )
         sys.exit(1)
 
     engine_name, engine = resolved
+    from openjarvis.engine.privacy import personal_engine
+
+    engine = personal_engine(config, engine, engine_name)
 
     # ------------------------------------------------------------------
     # Research mode — hybrid search + agentic loop over the knowledge store
@@ -982,6 +1000,8 @@ def ask(
 
     # Discover models and merge into registry
     all_engines = discover_engines(config)
+    if engine_name == "free-pool":
+        all_engines = [*all_engines, ("free-pool", engine)]
     all_models = discover_models(all_engines)
     for ek, model_ids in all_models.items():
         merge_discovered_models(ek, model_ids)

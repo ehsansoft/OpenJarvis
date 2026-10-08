@@ -36,7 +36,7 @@ _DEFAULT_NOTES_DB = (
 
 _DEFAULT_IMESSAGE_DB = Path.home() / "Library" / "Messages" / "chat.db"
 
-_OLLAMA_MODEL = "qwen3.5:4b"
+_OLLAMA_MODEL = "local/research"
 
 # ---------------------------------------------------------------------------
 # Detection
@@ -294,24 +294,29 @@ def _launch_chat(store: KnowledgeStore, console: Console) -> None:
     # Engine
     config = load_config()
     bus = EventBus(record_history=False)
-    security = setup_security(config, OllamaEngine(), bus)
+    from openjarvis.engine.privacy import PrivatePoolEngine
+
+    security = setup_security(
+        config,
+        PrivatePoolEngine(
+            [
+                (
+                    "ollama",
+                    OllamaEngine(
+                        host=config.engine.ollama.host or None,
+                        num_ctx=config.engine.ollama.num_ctx or None,
+                    ),
+                )
+            ]
+        ),
+        bus,
+    )
     engine = security.engine
     if not engine.health():
         console.print(
             "[red]Ollama is not running.[/red] Start it with: [bold]ollama serve[/bold]"
         )
         return
-
-    models = engine.list_models()
-    if _OLLAMA_MODEL not in models and f"{_OLLAMA_MODEL}:latest" not in models:
-        base_name = _OLLAMA_MODEL.split(":")[0]
-        matching = [m for m in models if m.startswith(base_name)]
-        if not matching:
-            console.print(
-                f"[yellow]Model {_OLLAMA_MODEL} not found.[/yellow] "
-                f"Pull it with: [bold]ollama pull {_OLLAMA_MODEL}[/bold]"
-            )
-            return
 
     # Tools
     retriever = TwoStageRetriever(store)

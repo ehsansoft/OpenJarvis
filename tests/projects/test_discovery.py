@@ -1,0 +1,132 @@
+"""Tests for the local project fabric discovery layer."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from openjarvis.projects.discovery import (
+    discover_projects,
+    load_registry,
+    write_registry,
+)
+
+
+def _make_git_repo(path: Path) -> None:
+    git = path / ".git"
+    git.mkdir(parents=True)
+    (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    (git / "config").write_text(
+        '[remote "origin"]\n    url = https://github.com/example/repo.git\n',
+        encoding="utf-8",
+    )
+
+
+def test_discovers_mixed_projects_and_prunes_dependencies(tmp_path: Path) -> None:
+    plugin = tmp_path / "livora-plugin"
+    plugin.mkdir()
+    _make_git_repo(plugin)
+    (plugin / "livora.php").write_text(
+        "<?php\n/*\nPlugin Name: Livora Example\n*/\n",
+        encoding="utf-8",
+    )
+
+    node = tmp_path / "cvi"
+    node.mkdir()
+    (node / "package.json").write_text('{"name":"cvi"}', encoding="utf-8")
+    (node / "tsconfig.json").write_text("{}", encoding="utf-8")
+
+    ignored = node / "node_modules" / "fake-project"
+    ignored.mkdir(parents=True)
+    (ignored / "package.json").write_text("{}", encoding="utf-8")
+
+    records = discover_projects(tmp_path, max_depth=4)
+    by_name = {record.name: record for record in records}
+
+    assert set(by_name) == {"cvi", "livora-plugin"}
+    assert by_name["livora-plugin"].project_type == "wordpress-plugin"
+    assert "WordPress" in by_name["livora-plugin"].frameworks
+    assert by_name["livora-plugin"].git["branch"] == "main"
+    assert by_name["livora-plugin"].git["remote"].endswith("repo.git")
+    assert "TypeScript" in by_name["cvi"].languages
+
+
+def test_nested_monorepo_packages_are_not_counted_as_projects(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "platform"
+    root.mkdir()
+    (root / "package.json").write_text(
+        '{"name":"platform","workspaces":["apps/*","packages/*"]}',
+        encoding="utf-8",
+    )
+    app = root / "apps" / "admin"
+    app.mkdir(parents=True)
+    (app / "package.json").write_text('{"name":"admin"}', encoding="utf-8")
+
+    nested_repo = root / "vendor-tool"
+    nested_repo.mkdir()
+    _make_git_repo(nested_repo)
+    (nested_repo / "package.json").write_text(
+        '{"name":"vendor-tool"}',
+        encoding="utf-8",
+    )
+
+    records = discover_projects(tmp_path, max_depth=5)
+    paths = {Path(item.path).name for item in records}
+
+    assert "platform" in paths
+    assert "admin" not in paths
+    assert "vendor-tool" in paths
+
+
+def test_reference_and_archive_roots_remain_searchable_but_classified(
+    tmp_path: Path,
+) -> None:
+    reference = tmp_path / "Github-rep" / "upstream-lib"
+    reference.mkdir(parents=True)
+    (reference / "package.json").write_text(
+        '{"name":"upstream-lib"}',
+        encoding="utf-8",
+    )
+
+    archive = tmp_path / "client-backups" / "site-copy"
+    archive.mkdir(parents=True)
+    (archive / "composer.json").write_text("{}", encoding="utf-8")
+
+    active = tmp_path / "my-app"
+    active.mkdir()
+    (active / "package.json").write_text(
+        '{"name":"my-app"}',
+        encoding="utf-8",
+    )
+
+    records = discover_projects(tmp_path, max_depth=4)
+    by_name = {record.name: record for record in records}
+
+    assert by_name["upstream-lib"].role == "reference"
+    assert by_name["upstream-lib"].collection == "Github-rep"
+    assert by_name["site-copy"].role == "archive"
+    assert by_name["my-app"].role == "active"
+
+
+def test_registry_round_trip(tmp_path: Path) -> None:
+    project = tmp_path / "python-tool"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        "[project]\nname='python-tool'\n",
+        encoding="utf-8",
+    )
+
+    records = discover_projects(tmp_path)
+    registry_path = tmp_path / "state" / "projects.json"
+    written = write_registry(records, registry_path, root=tmp_path)
+
+    assert written == registry_path
+    payload = load_registry(registry_path)
+    assert payload["schema_version"] == 2
+    assert payload["root"] == str(tmp_path.resolve())
+    assert payload["projects"][0]["project_type"] == "python"
+
+    raw = json.loads(registry_path.read_text(encoding="utf-8"))
+    assert raw["projects"][0]["project_id"] == "python-tool"
