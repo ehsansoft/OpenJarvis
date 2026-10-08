@@ -8,6 +8,7 @@ from unittest import mock
 from openjarvis.projects.machine_inventory import (
     ToolInstallation,
     analyze_machine_inventory,
+    detect_voicebox,
     detect_wampserver,
 )
 
@@ -31,6 +32,7 @@ def test_machine_recommends_path_cleanup_for_multiple_node_installs() -> None:
     recommendations = analyze_machine_inventory(
         tools,
         {"reachable": False, "shared_digest_groups": []},
+        {"reachable": False},
         {"detected": False, "components": []},
     )
 
@@ -38,6 +40,75 @@ def test_machine_recommends_path_cleanup_for_multiple_node_installs() -> None:
         item["kind"] == "multiple-tool-installations"
         for item in recommendations
     )
+
+
+def test_voicebox_detects_registered_and_loaded_models() -> None:
+    def fake_http(url: str, *, timeout: float = 4.0):
+        if url.endswith("/health"):
+            return {"status": "ok", "backend": "pytorch"}
+        if url.endswith("/models/status"):
+            return {
+                "models": [
+                    {
+                        "model_name": "kokoro",
+                        "display_name": "Kokoro 82M",
+                        "engine": "kokoro",
+                        "downloaded": True,
+                        "loaded": True,
+                        "size_mb": 350,
+                    },
+                    {
+                        "model_name": "whisper-base",
+                        "display_name": "Whisper Base",
+                        "engine": "whisper",
+                        "downloaded": True,
+                        "loaded": True,
+                        "size_mb": 300,
+                    },
+                    {
+                        "model_name": "qwen-0.6b",
+                        "display_name": "Qwen3 0.6B",
+                        "engine": "llm",
+                        "downloaded": True,
+                        "loaded": True,
+                        "size_mb": 1200,
+                    },
+                    {
+                        "model_name": "tada-3b-ml",
+                        "display_name": "TADA 3B Multilingual",
+                        "engine": "tada",
+                        "downloaded": False,
+                        "loaded": False,
+                        "size_mb": 8000,
+                    },
+                ]
+            }
+        raise AssertionError(url)
+
+    with mock.patch(
+        "openjarvis.projects.machine_inventory._http_json",
+        side_effect=fake_http,
+    ):
+        result = detect_voicebox("http://127.0.0.1:17493")
+
+    assert result["reachable"] is True
+    assert result["model_count"] == 4
+    assert result["downloaded_count"] == 3
+    assert result["loaded_count"] == 3
+    assert "kokoro" in result["loaded_models"]
+    assert "whisper-base" in result["downloaded_models"]
+
+
+def test_voicebox_unreachable_is_nonfatal() -> None:
+    with mock.patch(
+        "openjarvis.projects.machine_inventory._http_json",
+        side_effect=OSError("connection refused"),
+    ):
+        result = detect_voicebox("http://127.0.0.1:17493")
+
+    assert result["reachable"] is False
+    assert result["models"] == []
+    assert "connection refused" in result["error"]
 
 
 def test_wamp_detection_maps_versions_vhosts_and_wordpress(
