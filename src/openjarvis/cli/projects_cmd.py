@@ -422,9 +422,15 @@ def cleanup_scan(
 
     gib = result.estimated_bytes / (1024**3)
     click.echo(
-        f"Cleanup candidates: {result.candidate_count} "
-        f"(up to {gib:.2f} GiB observed)"
+        f"Cleanup candidates: {result.candidate_count} matched, "
+        f"{result.returned_candidate_count} largest returned "
+        f"({gib:.2f} GiB observed total)"
     )
+    click.echo(f"Directories scanned: {result.directories_scanned:,}")
+    if result.truncated:
+        click.echo(
+            "Report list is capped; total size/count include all matches."
+        )
     click.echo(f"Report: {output_path.resolve()}")
     for item in result.candidates[:25]:
         click.echo(
