@@ -8,6 +8,7 @@ No file is modified, moved, or removed by this module.
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 import os
 from collections import defaultdict
@@ -98,7 +99,10 @@ class CleanupReport:
     generated_at: str
     root: str
     candidate_count: int
+    returned_candidate_count: int
     estimated_bytes: int
+    truncated: bool
+    directories_scanned: int
     candidates: list[dict[str, Any]]
     errors: list[str]
 
@@ -184,19 +188,30 @@ def scan_cleanup_candidates(
     max_files_per_candidate: int = 250_000,
     skip_names: Iterable[str] | None = None,
 ) -> CleanupReport:
+    """Scan all eligible folders and retain the largest cleanup candidates.
+
+    The previous implementation stopped after the first max_candidates
+    matches, which made results depend on traversal order. This version walks
+    the full root, tracks total potential bytes, and keeps only the largest
+    candidates for the report.
+    """
     base = Path(root).expanduser().resolve()
     if not base.exists():
         raise FileNotFoundError(f"Cleanup root does not exist: {base}")
 
     skip = frozenset(skip_names or _SYSTEM_SKIP_NAMES)
-    candidates: list[CleanupCandidate] = []
+    heap: list[tuple[int, str, CleanupCandidate]] = []
     errors: list[str] = []
     stack = [base]
     now = datetime.now(timezone.utc).timestamp()
     age_seconds = max(0, min_age_days) * 86400
+    matched_count = 0
+    estimated_bytes = 0
+    directories_scanned = 0
 
-    while stack and len(candidates) < max_candidates:
+    while stack:
         current = stack.pop()
+        directories_scanned += 1
         try:
             entries = list(os.scandir(current))
         except OSError as exc:
@@ -241,37 +256,48 @@ def scan_cleanup_candidates(
                     if newest
                     else ""
                 )
-                candidates.append(
-                    CleanupCandidate(
-                        path=str(path),
-                        kind=name,
-                        risk=risk,
-                        files=files,
-                        bytes=size,
-                        modified_at=modified,
-                        truncated=truncated,
-                        reason=reason,
-                    )
+                candidate = CleanupCandidate(
+                    path=str(path),
+                    kind=name,
+                    risk=risk,
+                    files=files,
+                    bytes=size,
+                    modified_at=modified,
+                    truncated=truncated,
+                    reason=reason,
                 )
-                if len(candidates) >= max_candidates:
-                    break
+                matched_count += 1
+                estimated_bytes += size
+
+                key = (size, str(path).lower(), candidate)
+                if len(heap) < max_candidates:
+                    heapq.heappush(heap, key)
+                elif key[:2] > heap[0][:2]:
+                    heapq.heapreplace(heap, key)
+
                 # Candidate size walk already traversed descendants. Do not
                 # descend again through the main discovery walk.
                 continue
 
             stack.append(path)
 
-    candidates.sort(key=lambda item: item.bytes, reverse=True)
+    candidates = [item[2] for item in heap]
+    candidates.sort(
+        key=lambda item: (item.bytes, item.path.lower()),
+        reverse=True,
+    )
     return CleanupReport(
-        schema_version=1,
+        schema_version=2,
         generated_at=datetime.now(timezone.utc).isoformat(),
         root=str(base),
-        candidate_count=len(candidates),
-        estimated_bytes=sum(item.bytes for item in candidates),
+        candidate_count=matched_count,
+        returned_candidate_count=len(candidates),
+        estimated_bytes=estimated_bytes,
+        truncated=matched_count > len(candidates),
+        directories_scanned=directories_scanned,
         candidates=[item.to_dict() for item in candidates],
         errors=errors,
     )
-
 
 def _sample_hash(path: Path, size: int, *, chunk_size: int = 1024 * 1024) -> str:
     digest = hashlib.blake2b(digest_size=16)
