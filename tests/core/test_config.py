@@ -98,6 +98,16 @@ class TestTomlLoading:
         cfg = load_config(toml_file)
         assert cfg.engine.default == "ollama"
 
+    def test_loads_utf8_bom_from_windows_powershell(
+        self, tmp_path: Path
+    ) -> None:
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_bytes(
+            b"\xef\xbb\xbf[engine]\ndefault = \"ollama\"\n"
+        )
+        cfg = load_config(toml_file)
+        assert cfg.engine.default == "ollama"
+
     def test_load_overrides(self, tmp_path: Path) -> None:
         toml_file = tmp_path / "config.toml"
         toml_file.write_text(
