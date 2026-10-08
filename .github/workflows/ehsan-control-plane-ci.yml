@@ -79,12 +79,12 @@ jobs:
           Copy-Item scripts\install\Upgrade-Ehsan-Config.py dist\ehsan-installer\
           Copy-Item scripts\install\Check-Voicebox-MCP.py dist\ehsan-installer\
           Copy-Item scripts\install\installer-manifest.json dist\ehsan-installer\
-          Compress-Archive -Path dist\ehsan-installer\* -DestinationPath dist\OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.2.zip
+          Compress-Archive -Path dist\ehsan-installer\* -DestinationPath dist\OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.3.zip
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.2
-          path: dist/OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.2.zip
+          name: OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.3
+          path: dist/OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.3.zip
           if-no-files-found: error
           retention-days: 14
