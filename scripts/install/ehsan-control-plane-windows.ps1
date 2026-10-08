@@ -10,7 +10,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$InstallerVersion = "0.1.0-alpha.2"
+$InstallerVersion = "0.1.0-alpha.3"
 
 function Refresh-Path {
     $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
@@ -145,6 +145,13 @@ try {
     }
     Run-JarvisChecked projects scan $ProjectsRoot --max-depth 5
     Run-JarvisChecked projects machine-scan
+
+    Write-Host "Checking optional Voicebox localhost service..." -ForegroundColor Cyan
+    & $UvExe run jarvis projects voicebox-scan --host "http://127.0.0.1:17493"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Voicebox was not reachable; continuing without it." -ForegroundColor Yellow
+    }
+
     Run-JarvisChecked model free
 
     if ($InitialInventory) {
