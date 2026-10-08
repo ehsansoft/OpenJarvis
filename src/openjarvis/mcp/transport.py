@@ -280,6 +280,11 @@ class StreamableHTTPTransport(MCPTransport):
         self._extra_headers = dict(headers or {})
         self._session_id: Optional[str] = None
         self._client = httpx.Client(
+            # FastAPI/Starlette mounted apps commonly redirect "/mcp" to
+            # "/mcp/". MCP clients should transparently follow that local
+            # canonicalization instead of treating the 307 as a protocol
+            # failure.
+            follow_redirects=True,
             timeout=httpx.Timeout(
                 connect=connect_timeout,
                 read=request_timeout,
