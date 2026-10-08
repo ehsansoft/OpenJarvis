@@ -254,6 +254,7 @@ def discover_projects(
     ignores = frozenset(ignore_names or _DEFAULT_IGNORES)
     records: list[ProjectRecord] = []
     seen_paths: set[Path] = set()
+    canonical_roots: list[Path] = []
 
     for path, _depth in _iter_directories(
         base, max_depth=max_depth, ignore_names=ignores
@@ -272,6 +273,26 @@ def discover_projects(
         seen_paths.add(resolved)
 
         project_type, frameworks = _detect_type(path, markers)
+
+        # Treat nested package manifests as components of an already-discovered
+        # project instead of inflating the project registry with every
+        # monorepo app/package. Nested Git repositories and WordPress
+        # plugin/theme roots remain first-class projects.
+        nested_under_project = any(
+            root in resolved.parents for root in canonical_roots
+        )
+        independent_nested = (
+            ".git" in markers
+            or project_type in {
+                "wordpress-plugin",
+                "wordpress-theme",
+                "wordpress-site",
+            }
+        )
+        if nested_under_project and not independent_nested:
+            continue
+
+        canonical_roots.append(resolved)
         relative = path.relative_to(base).as_posix()
         records.append(
             ProjectRecord(
