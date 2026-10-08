@@ -21,8 +21,9 @@ class MachineInventoryTool(BaseTool):
         return ToolSpec(
             name="machine_inventory",
             description=(
-                "Read the latest local machine inventory: Ollama models, "
-                "WampServer runtimes, Node/npm/pnpm and other developer tools."
+                "Read the latest local machine inventory: hardware, Ollama "
+                "and Voicebox models, WampServer runtimes, Node/npm/pnpm "
+                "and other developer tools."
             ),
             parameters={
                 "type": "object",
