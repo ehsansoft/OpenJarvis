@@ -4,158 +4,81 @@ param(
     [string]$StateRoot = "D:\AI-Control\OpenJarvis",
     [string]$ProjectsRoot = "D:\Projects",
     [string]$Branch = "feature/ehsan-control-plane-foundation",
-    [string]$VoiceboxHost = "http://127.0.0.1:17493"
+    [switch]$Cleanup
 )
 
 $ErrorActionPreference = "Stop"
-$RepairVersion = "0.1.0-alpha.4.1"
+$RepairVersion = "0.1.0-alpha.4.2"
 $env:OPENJARVIS_HOME = $StateRoot
+
+function Invoke-NativeChecked {
+    param(
+        [string]$Label,
+        [string]$FilePath,
+        [string[]]$Arguments
+    )
+    Write-Host ""
+    Write-Host "=== $Label ===" -ForegroundColor Cyan
+    & $FilePath @Arguments
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        throw "$Label failed with exit code $code."
+    }
+}
 
 if (-not (Test-Path (Join-Path $InstallRoot ".git"))) {
     throw "OpenJarvis checkout not found at $InstallRoot."
 }
 
-$git = (Get-Command git -ErrorAction SilentlyContinue).Source
-$uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
-if (-not $git) { throw "git is not on PATH." }
-if (-not $uv) { throw "uv is not on PATH." }
+$gitCommand = Get-Command git -ErrorAction SilentlyContinue
+$uvCommand = Get-Command uv -ErrorAction SilentlyContinue
+if (-not $gitCommand) { throw "git is not on PATH." }
+if (-not $uvCommand) { throw "uv is not on PATH." }
 
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$supportRoot = Join-Path $StateRoot "support"
-$runDir = Join-Path $supportRoot "repair-alpha4-$stamp"
-New-Item -ItemType Directory -Force -Path $runDir | Out-Null
-
-function Run-Capture {
-    param(
-        [string]$Name,
-        [scriptblock]$Command,
-        [switch]$AllowFailure
-    )
-    $path = Join-Path $runDir "$Name.txt"
-    Write-Host ""
-    Write-Host "=== $Name ===" -ForegroundColor Cyan
-    $utf8 = New-Object System.Text.UTF8Encoding($false)
-    $writer = New-Object System.IO.StreamWriter($path, $false, $utf8)
-    try {
-        # Native exit codes inside a child scriptblock are scope-sensitive in
-        # Windows PowerShell 5.1. Every required native command below performs
-        # its own immediate exit-code check, so reaching this point means the
-        # captured step succeeded. Do not reuse a stale caller LASTEXITCODE.
-        & $Command 2>&1 | ForEach-Object {
-            $line = $_.ToString()
-            Write-Host $line
-            $writer.WriteLine($line)
-        }
-        $code = 0
-    } catch {
-        $line = $_.ToString()
-        Write-Host $line -ForegroundColor Red
-        $writer.WriteLine($line)
-        $code = 1
-    } finally {
-        $writer.Dispose()
-    }
-    if ($code -ne 0 -and -not $AllowFailure) {
-        throw "$Name failed with exit code $code."
-    }
-    return $code
-}
+$git = $gitCommand.Source
+$uv = $uvCommand.Source
 
 Push-Location $InstallRoot
 try {
-    Run-Capture "01-git-update" {
-        & $git fetch origin
-        if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
-        & $git switch $Branch
-        if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
-        & $git pull --ff-only origin $Branch
-        if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
-    } | Out-Null
+    # Do not wrap native Git commands in child scriptblocks/pipelines.
+    # Windows PowerShell 5.1 can otherwise surface a stale LASTEXITCODE.
+    Invoke-NativeChecked "01-git-fetch" $git @("fetch", "origin")
+    Invoke-NativeChecked "02-git-switch" $git @("switch", $Branch)
+    Invoke-NativeChecked "03-git-pull" $git @(
+        "pull", "--ff-only", "origin", $Branch
+    )
 
-    Run-Capture "02-uv-sync" {
-        & $uv python install 3.13
-        if ($LASTEXITCODE -ne 0) { throw "uv python install failed" }
-        & $uv sync --python 3.13 --extra dev --extra server --extra desktop
-        if ($LASTEXITCODE -ne 0) { throw "uv sync failed" }
-    } | Out-Null
+    Invoke-NativeChecked "04-python" $uv @("python", "install", "3.13")
+    Invoke-NativeChecked "05-sync" $uv @(
+        "sync",
+        "--python", "3.13",
+        "--extra", "dev",
+        "--extra", "server",
+        "--extra", "desktop"
+    )
 
-    $config = Join-Path $StateRoot "config.toml"
-    $preset = Join-Path $InstallRoot "configs\openjarvis\examples\ehsan-control-plane.toml"
-    if (-not (Test-Path $config)) {
-        Copy-Item $preset $config
-    }
-    $backup = "$config.pre-alpha4-backup"
-    if (-not (Test-Path $backup)) {
-        Copy-Item $config $backup
+    $finalizer = Join-Path $InstallRoot "scripts\install\Finalize-Ehsan-Setup.py"
+    if (-not (Test-Path $finalizer)) {
+        throw "Finalizer not found after update: $finalizer"
     }
 
-    Run-Capture "03-config-upgrade" {
-        & $uv run python "scripts\install\Upgrade-Ehsan-Config.py" $config
-        if ($LASTEXITCODE -ne 0) { throw "config upgrade failed" }
-    } | Out-Null
-
-    Run-Capture "04-config-validate" {
-        & $uv run python -c "import pathlib,tomllib,sys; p=pathlib.Path(sys.argv[1]); tomllib.loads(p.read_text(encoding='utf-8-sig')); print('Config TOML OK:', p)" $config
-        if ($LASTEXITCODE -ne 0) { throw "config validation failed" }
-    } | Out-Null
-
-    Run-Capture "05-alpha4-tests" {
-        & $uv run pytest tests/core/test_config.py tests/core/test_control_plane_config.py tests/core/test_ehsan_control_plane_upgrade.py tests/engine/test_nararouter.py tests/intelligence/test_free_pool.py tests/projects/test_discovery.py tests/projects/test_inventory.py tests/projects/test_machine_inventory.py tests/projects/test_hygiene.py tests/tools/test_voicebox_status.py tests/speech/test_voicebox_stt.py tests/speech/test_discovery.py tests/mcp/test_transport.py tests/mcp/test_loader.py -q
-        if ($LASTEXITCODE -ne 0) { throw "alpha4 targeted tests failed" }
-    } | Out-Null
-
-    Run-Capture "06-doctor" {
-        & $uv run jarvis doctor
-    } -AllowFailure | Out-Null
-
-    Run-Capture "07-voicebox-scan" {
-        & $uv run jarvis projects voicebox-scan --host $VoiceboxHost
-    } -AllowFailure | Out-Null
-
-    Run-Capture "08-voicebox-mcp" {
-        & $uv run python "scripts\install\Check-Voicebox-MCP.py"
-    } -AllowFailure | Out-Null
-
-    Run-Capture "09-machine-scan" {
-        & $uv run jarvis projects machine-scan
-        if ($LASTEXITCODE -ne 0) { throw "machine scan failed" }
-    } | Out-Null
-
-    Run-Capture "10-free-models" {
-        & $uv run jarvis model free
-        if ($LASTEXITCODE -ne 0) { throw "free model discovery failed" }
-    } | Out-Null
-
-    Run-Capture "11-project-rescan" {
-        & $uv run jarvis projects scan $ProjectsRoot --max-depth 5
-        if ($LASTEXITCODE -ne 0) { throw "project rescan failed" }
-    } | Out-Null
-
-    $registry = Join-Path $StateRoot "registry"
-    if (Test-Path $registry) {
-        Get-ChildItem $registry -Filter "*.json" -File -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                Copy-Item $_.FullName (Join-Path $runDir $_.Name) -Force
-            }
+    $arguments = @(
+        "run", "python", $finalizer,
+        "--repo", $InstallRoot,
+        "--state", $StateRoot,
+        "--projects", $ProjectsRoot
+    )
+    if ($Cleanup) {
+        $arguments += "--cleanup"
     }
 
-    @(
-        "RepairVersion=$RepairVersion",
-        "Branch=$Branch",
-        "Commit=$((& $git rev-parse HEAD).Trim())",
-        "VoiceboxHost=$VoiceboxHost",
-        "Config=$config",
-        "ConfigBackup=$backup"
-    ) | Set-Content (Join-Path $runDir "12-repair-summary.txt") -Encoding UTF8
+    Invoke-NativeChecked "06-finalize" $uv $arguments
 } finally {
     Pop-Location
 }
 
-$zip = Join-Path $supportRoot "openjarvis-repair-alpha4.1-$stamp.zip"
-if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path (Join-Path $runDir "*") -DestinationPath $zip -CompressionLevel Optimal
-
 Write-Host ""
-Write-Host "Repair alpha.4.1 completed." -ForegroundColor Green
-Write-Host "Support ZIP: $zip"
-Write-Host "Next: run First-Run-Scan.cmd with Voicebox open."
+Write-Host "OpenJarvis $RepairVersion setup finalized." -ForegroundColor Green
+Write-Host "Editor API: http://127.0.0.1:8000/router/v1"
+Write-Host "Editor model: free/code"
+Write-Host "Support bundles: $StateRoot\support"
