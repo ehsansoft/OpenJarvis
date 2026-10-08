@@ -63,6 +63,22 @@ For coding clients such as OpenCode or Kilo Code, choose model free/code.
 For long-context research, choose free/research. For private or sensitive code,
 prefer a concrete local model or configure policy to disallow remote candidates.
 
+## Voicebox integration
+
+The control plane probes the local Voicebox backend at:
+
+    http://127.0.0.1:17493
+
+Run:
+
+    jarvis projects voicebox-scan
+
+Voicebox model status is read from `/models/status`, including registered,
+downloaded and loaded TTS, Whisper/STT, and local LLM entries. The scan is
+read-only and does not load, unload, download or delete Voicebox models.
+
+The machine inventory also checks the configured AI-Control Hugging Face cache
+root and exposes live Voicebox status to agents through `voicebox_status`.
 ## Developer machine inventory
 
 Run:
