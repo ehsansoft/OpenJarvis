@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from unittest.mock import patch
 
 from openjarvis.security.rate_limiter import (
     RateLimitConfig,
@@ -131,6 +132,28 @@ class TestRateLimiter:
         limiter.reset()
         assert limiter.check("key1")[0] is True
         assert limiter.check("key2")[0] is True
+
+    def test_python_fallback_when_rust_extension_is_unavailable(self) -> None:
+        """Source installs keep rate limiting active without openjarvis_rust."""
+        with patch(
+            "openjarvis._rust_bridge.get_rust_module",
+            side_effect=ModuleNotFoundError("openjarvis_rust"),
+        ):
+            limiter = RateLimiter(
+                RateLimitConfig(
+                    requests_per_minute=60,
+                    burst_size=2,
+                )
+            )
+
+        assert limiter.backend == "python"
+        assert limiter.check("agent")[0] is True
+        assert limiter.check("agent")[0] is True
+        allowed, wait = limiter.check("agent")
+        assert allowed is False
+        assert wait > 0.0
+        limiter.reset("agent")
+        assert limiter.check("agent")[0] is True
 
     def test_default_config(self) -> None:
         """Default values are reasonable."""
