@@ -2,10 +2,12 @@
 param(
     [string]$InstallRoot = "D:\AI-Tools\OpenJarvis",
     [string]$StateRoot = "D:\AI-Control\OpenJarvis",
-    [string]$Branch = "feature/ehsan-control-plane-foundation"
+    [string]$Branch = "feature/ehsan-control-plane-foundation",
+    [string]$VoiceboxHost = "http://127.0.0.1:17493"
 )
 
 $ErrorActionPreference = "Stop"
+$RepairVersion = "0.1.0-alpha.3"
 $env:OPENJARVIS_HOME = $StateRoot
 
 if (-not (Test-Path (Join-Path $InstallRoot ".git"))) {
@@ -33,7 +35,7 @@ try {
     $preset = Join-Path $InstallRoot "configs\openjarvis\examples\ehsan-control-plane.toml"
     if (-not (Test-Path $config)) { Copy-Item $preset $config }
 
-    $backup = "$config.pre-alpha2-backup"
+    $backup = "$config.pre-alpha3-backup"
     if ((Test-Path $config) -and -not (Test-Path $backup)) {
         Copy-Item $config $backup
     }
@@ -52,6 +54,18 @@ try {
     & $uv run python -c "import pathlib,tomllib,sys; p=pathlib.Path(sys.argv[1]); tomllib.loads(p.read_text(encoding='utf-8-sig')); print('Config TOML OK:', p)" $config
     if ($LASTEXITCODE -ne 0) { throw "Config is still invalid." }
 
+    Write-Host "Running targeted alpha.3 tests..." -ForegroundColor Cyan
+    & $uv run pytest tests/projects/test_machine_inventory.py tests/tools/test_voicebox_status.py tests/core/test_config.py -q
+    if ($LASTEXITCODE -ne 0) {
+        throw "Targeted alpha.3 tests failed."
+    }
+
+    Write-Host "Probing Voicebox at $VoiceboxHost..." -ForegroundColor Cyan
+    & $uv run jarvis projects voicebox-scan --host $VoiceboxHost
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Voicebox is not reachable right now. Start Voicebox and rerun First-Run-Scan.cmd; repair will continue." -ForegroundColor Yellow
+    }
+
     Write-Host "Running doctor..." -ForegroundColor Cyan
     & $uv run jarvis doctor
     Write-Host "Running machine scan..." -ForegroundColor Cyan
@@ -60,7 +74,7 @@ try {
     & $uv run jarvis model free
 
     Write-Host ""
-    Write-Host "Repair completed. Run First-Run-Scan.cmd next." -ForegroundColor Green
+    Write-Host "Repair $RepairVersion completed. Run First-Run-Scan.cmd next." -ForegroundColor Green
 } finally {
     Pop-Location
 }
