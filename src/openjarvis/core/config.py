@@ -2128,8 +2128,12 @@ def load_config(path: Optional[Path] = None) -> JarvisConfig:
         config_path = get_config_path()
     cfg._config_dir = config_path.parent
     if config_path.exists():
-        with open(config_path, "rb") as fh:
-            data = tomllib.load(fh)
+        # Windows PowerShell 5.1 writes a UTF-8 BOM for "-Encoding utf8".
+        # TOML itself is UTF-8, but Python's tomllib rejects U+FEFF at the
+        # first character. Decode with utf-8-sig so both BOM and BOM-less
+        # config files are accepted.
+        raw_config = config_path.read_bytes()
+        data = tomllib.loads(raw_config.decode("utf-8-sig"))
 
         # Run backward-compat migrations before applying
         _migrate_toml_data(data, cfg)
