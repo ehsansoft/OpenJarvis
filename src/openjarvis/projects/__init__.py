@@ -15,6 +15,23 @@ from openjarvis.projects.inventory import (
 )
 
 
+from openjarvis.projects.machine_inventory import (
+    MachineInventory,
+    detect_ollama,
+    detect_toolchain,
+    detect_wampserver,
+    scan_machine_inventory,
+    write_machine_inventory,
+)
+from openjarvis.projects.hygiene import (
+    CleanupReport,
+    DuplicateReport,
+    scan_cleanup_candidates,
+    scan_duplicate_files,
+    write_cleanup_report,
+    write_duplicate_report,
+)
+
 __all__ = [
     "ProjectRecord",
     "discover_projects",
@@ -24,4 +41,16 @@ __all__ = [
     "analyze_inventory",
     "scan_drive_inventory",
     "write_inventory",
+    "MachineInventory",
+    "detect_ollama",
+    "detect_toolchain",
+    "detect_wampserver",
+    "scan_machine_inventory",
+    "write_machine_inventory",
+    "CleanupReport",
+    "DuplicateReport",
+    "scan_cleanup_candidates",
+    "scan_duplicate_files",
+    "write_cleanup_report",
+    "write_duplicate_report",
 ]
