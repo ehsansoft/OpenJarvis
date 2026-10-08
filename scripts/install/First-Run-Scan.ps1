@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = "Continue"
 $env:OPENJARVIS_HOME = $StateRoot
+$BundleVersion = "0.1.0-alpha.4"
 
 if (-not (Test-Path (Join-Path $InstallRoot ".git"))) {
     throw "OpenJarvis is not installed at $InstallRoot."
@@ -19,21 +20,22 @@ if (-not $UvExe) { throw "uv was not found on PATH." }
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $supportRoot = Join-Path $StateRoot "support"
-$runDir = Join-Path $supportRoot "first-run-$stamp"
+$runDir = Join-Path $supportRoot "first-run-alpha4-$stamp"
 New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 
-function Run-Capture(
-    [string]$Name,
-    [string[]]$JarvisArgs
-) {
+function Run-Capture {
+    param(
+        [string]$Name,
+        [scriptblock]$Command
+    )
     $path = Join-Path $runDir "$Name.txt"
     Write-Host ""
     Write-Host "=== $Name ===" -ForegroundColor Cyan
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    $writer = New-Object System.IO.StreamWriter($path, $false, $utf8NoBom)
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $writer = New-Object System.IO.StreamWriter($path, $false, $utf8)
     Push-Location $InstallRoot
     try {
-        & $UvExe run jarvis @JarvisArgs 2>&1 | ForEach-Object {
+        & $Command 2>&1 | ForEach-Object {
             $line = $_.ToString()
             Write-Host $line
             $writer.WriteLine($line)
@@ -51,31 +53,54 @@ function Run-Capture(
     return $code
 }
 
-Run-Capture "01-doctor" @("doctor") | Out-Null
-Run-Capture "02-free-models" @("model", "free", "--json") | Out-Null
-Run-Capture "02a-voicebox-scan" @(
-    "projects", "voicebox-scan",
-    "--host", "http://127.0.0.1:17493",
-    "--json"
-) | Out-Null
-Run-Capture "03-machine-scan" @("projects", "machine-scan", "--json") | Out-Null
-Run-Capture "04-projects" @("projects", "scan", $ProjectsRoot, "--max-depth", "5", "--json") | Out-Null
-Run-Capture "05-drive-inventory" @("projects", "inventory", $InventoryRoot, "--json") | Out-Null
-Run-Capture "06-cleanup-scan" @("projects", "cleanup-scan", $InventoryRoot, "--min-age-days", "30", "--json") | Out-Null
+Run-Capture "01-doctor" {
+    & $UvExe run jarvis doctor
+} | Out-Null
+
+Run-Capture "02-free-models" {
+    & $UvExe run jarvis model free --json
+} | Out-Null
+
+Run-Capture "03-voicebox-scan" {
+    & $UvExe run jarvis projects voicebox-scan --host "http://127.0.0.1:17493" --json
+} | Out-Null
+
+Run-Capture "04-voicebox-mcp" {
+    & $UvExe run python "scripts\install\Check-Voicebox-MCP.py"
+} | Out-Null
+
+Run-Capture "05-machine-scan" {
+    & $UvExe run jarvis projects machine-scan --json
+} | Out-Null
+
+Run-Capture "06-projects" {
+    & $UvExe run jarvis projects scan $ProjectsRoot --max-depth 5 --json
+} | Out-Null
+
+Run-Capture "07-drive-inventory" {
+    & $UvExe run jarvis projects inventory $InventoryRoot --json
+} | Out-Null
+
+Run-Capture "08-cleanup-scan" {
+    & $UvExe run jarvis projects cleanup-scan $InventoryRoot --min-age-days 30 --json
+} | Out-Null
 
 if ($IncludeDuplicates) {
-    Run-Capture "07-duplicates" @("projects", "duplicates", $InventoryRoot, "--min-size-mb", "10", "--max-files", "250000", "--json") | Out-Null
+    Run-Capture "09-duplicates" {
+        & $UvExe run jarvis projects duplicates $InventoryRoot --min-size-mb 10 --max-files 250000 --json
+    } | Out-Null
 }
 
 $registry = Join-Path $StateRoot "registry"
 if (Test-Path $registry) {
-    Get-ChildItem $registry -Filter "*.json" -File -ErrorAction SilentlyContinue | ForEach-Object {
-        Copy-Item $_.FullName (Join-Path $runDir $_.Name) -Force
-    }
+    Get-ChildItem $registry -Filter "*.json" -File -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Copy-Item $_.FullName (Join-Path $runDir $_.Name) -Force
+        }
 }
 
-$configDiag = Join-Path $runDir "07-config-diagnostics.txt"
 $configPath = Join-Path $StateRoot "config.toml"
+$configDiag = Join-Path $runDir "10-config-diagnostics.txt"
 if (Test-Path $configPath) {
     $bytes = [System.IO.File]::ReadAllBytes($configPath)
     $hasBom = (
@@ -93,33 +118,30 @@ if (Test-Path $configPath) {
     ) | Set-Content $configDiag -Encoding ASCII
 }
 
-$voiceboxPortPath = Join-Path $runDir "07a-voicebox-port-17493.txt"
+$voiceboxPort = Join-Path $runDir "11-voicebox-port-17493.txt"
 try {
-    $listeners = Get-NetTCPConnection -LocalPort 17493 -State Listen -ErrorAction Stop
-    foreach ($listener in $listeners) {
-        $proc = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
-        "Address=$($listener.LocalAddress) Port=$($listener.LocalPort) PID=$($listener.OwningProcess) Process=$($proc.ProcessName) Path=$($proc.Path)" |
-            Add-Content $voiceboxPortPath -Encoding UTF8
+    $connections = Get-NetTCPConnection -LocalPort 17493 -State Listen -ErrorAction Stop
+    $lines = @()
+    foreach ($connection in $connections) {
+        $proc = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+        $lines += "Address=$($connection.LocalAddress) Port=$($connection.LocalPort) PID=$($connection.OwningProcess) Process=$($proc.ProcessName) Path=$($proc.Path)"
     }
+    $lines | Set-Content $voiceboxPort -Encoding UTF8
 } catch {
-    "No listener details found for port 17493." | Set-Content $voiceboxPortPath -Encoding UTF8
+    "No listener details found for port 17493." |
+        Set-Content $voiceboxPort -Encoding UTF8
 }
 
-$voiceboxCache = "D:\AI-Control\caches\huggingface\hub"
-if (Test-Path $voiceboxCache) {
-    Get-ChildItem $voiceboxCache -Directory -ErrorAction SilentlyContinue |
-        Select-Object Name, FullName, LastWriteTime |
-        ConvertTo-Json -Depth 4 |
-        Set-Content (Join-Path $runDir "07b-voicebox-cache-folders.json") -Encoding UTF8
-}
-$systemPath = Join-Path $runDir "08-system-summary.txt"
+$systemPath = Join-Path $runDir "12-system-summary.txt"
 Push-Location $InstallRoot
 try {
-    "Git branch / commit:" | Set-Content $systemPath -Encoding UTF8
-    git branch --show-current 2>&1 | Add-Content $systemPath
-    git rev-parse HEAD 2>&1 | Add-Content $systemPath
-    "" | Add-Content $systemPath
-    "Git status:" | Add-Content $systemPath
+    @(
+        "BundleVersion=$BundleVersion",
+        "Git branch=$((git branch --show-current).Trim())",
+        "Git commit=$((git rev-parse HEAD).Trim())",
+        "",
+        "Git status:"
+    ) | Set-Content $systemPath -Encoding UTF8
     git status --short 2>&1 | Add-Content $systemPath
     "" | Add-Content $systemPath
     "Ollama list:" | Add-Content $systemPath
@@ -132,12 +154,12 @@ try {
     Pop-Location
 }
 
-$zip = Join-Path $supportRoot "openjarvis-first-run-$stamp.zip"
+$zip = Join-Path $supportRoot "openjarvis-first-run-alpha4-$stamp.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $runDir "*") -DestinationPath $zip -CompressionLevel Optimal
 
 Write-Host ""
-Write-Host "First-run bundle ready:" -ForegroundColor Green
+Write-Host "Alpha.4 support bundle ready:" -ForegroundColor Green
 Write-Host $zip
 Write-Host ""
-Write-Host "Attach that ZIP to ChatGPT. It intentionally excludes credentials.toml."
+Write-Host "It contains no OpenJarvis credential store."
