@@ -66,6 +66,7 @@ class MachineInventory:
     platform_release: str
     tools: list[dict[str, Any]]
     ollama: dict[str, Any]
+    voicebox: dict[str, Any]
     wampserver: dict[str, Any]
     runtime_managers: dict[str, Any]
     package_caches: list[dict[str, Any]]
@@ -255,6 +256,159 @@ def detect_toolchain() -> list[ToolInstallation]:
             )
         )
     return found
+
+
+def _normalize_voicebox_host(host: str) -> str:
+    value = (
+        host
+        or os.environ.get("VOICEBOX_HOST", "")
+        or "http://127.0.0.1:17493"
+    ).strip()
+    return value.rstrip("/")
+
+
+def _http_json(url: str, *, timeout: float = 4.0) -> Any:
+    request = Request(url, headers={"Accept": "application/json"})
+    with urlopen(request, timeout=timeout) as response:  # noqa: S310
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _voicebox_storage_roots() -> list[dict[str, Any]]:
+    candidates: list[tuple[str, str]] = []
+
+    for key in (
+        "VOICEBOX_MODELS_DIR",
+        "HUGGINGFACE_HUB_CACHE",
+        "HF_HUB_CACHE",
+    ):
+        value = os.environ.get(key, "").strip()
+        if value:
+            candidates.append((key, value))
+
+    hf_home = os.environ.get("HF_HOME", "").strip()
+    if hf_home:
+        candidates.append(("HF_HOME", str(Path(hf_home) / "hub")))
+
+    if os.name == "nt":
+        user_profile = os.environ.get("USERPROFILE", "").strip()
+        if user_profile:
+            candidates.append(
+                (
+                    "huggingface-default",
+                    str(Path(user_profile) / ".cache" / "huggingface" / "hub"),
+                )
+            )
+        # This control-plane location is also the path used by the user's
+        # Voicebox installation when configured to share AI-Control storage.
+        candidates.append(
+            (
+                "ai-control",
+                r"D:\AI-Control\caches\huggingface\hub",
+            )
+        )
+
+    seen: set[str] = set()
+    results: list[dict[str, Any]] = []
+    for source, raw in candidates:
+        path = Path(raw).expanduser()
+        key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(
+            {
+                "source": source,
+                "path": str(path),
+                "exists": path.exists(),
+            }
+        )
+    return results
+
+
+def detect_voicebox(
+    host: str = "",
+    *,
+    timeout: float = 4.0,
+) -> dict[str, Any]:
+    """Detect a local Voicebox API and its registered model inventory."""
+    base = _normalize_voicebox_host(host)
+    result: dict[str, Any] = {
+        "host": base,
+        "reachable": False,
+        "health": {},
+        "models": [],
+        "model_count": 0,
+        "downloaded_count": 0,
+        "loaded_count": 0,
+        "downloaded_models": [],
+        "loaded_models": [],
+        "storage_roots": _voicebox_storage_roots(),
+        "openapi_url": f"{base}/openapi.json",
+        "docs_url": f"{base}/docs",
+        "error": "",
+    }
+
+    try:
+        health = _http_json(f"{base}/health", timeout=timeout)
+        if isinstance(health, dict):
+            result["health"] = health
+        result["reachable"] = True
+    except (URLError, OSError, ValueError, json.JSONDecodeError) as exc:
+        # Some builds may have the models route alive even if /health differs.
+        result["error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        payload = _http_json(f"{base}/models/status", timeout=timeout)
+    except (URLError, OSError, ValueError, json.JSONDecodeError) as exc:
+        if result["reachable"]:
+            result["error"] = f"models/status: {type(exc).__name__}: {exc}"
+        return result
+
+    result["reachable"] = True
+    result["error"] = ""
+    raw_models = payload.get("models", []) if isinstance(payload, dict) else []
+    models: list[dict[str, Any]] = []
+    for item in raw_models if isinstance(raw_models, list) else []:
+        if not isinstance(item, dict):
+            continue
+        record = {
+            "model_name": str(item.get("model_name") or ""),
+            "display_name": str(item.get("display_name") or ""),
+            "engine": str(item.get("engine") or ""),
+            "downloaded": bool(item.get("downloaded", False)),
+            "loaded": bool(item.get("loaded", False)),
+            "size_mb": item.get("size_mb", 0) or 0,
+            "model_size": str(item.get("model_size") or ""),
+            "hf_repo_id": str(item.get("hf_repo_id") or ""),
+        }
+        # Preserve extra public status fields without assuming a fixed schema.
+        for key in (
+            "languages",
+            "backend",
+            "device",
+            "status",
+            "category",
+            "type",
+        ):
+            if key in item:
+                record[key] = item[key]
+        models.append(record)
+
+    downloaded = [
+        item for item in models if bool(item.get("downloaded"))
+    ]
+    loaded = [item for item in models if bool(item.get("loaded"))]
+    result["models"] = models
+    result["model_count"] = len(models)
+    result["downloaded_count"] = len(downloaded)
+    result["loaded_count"] = len(loaded)
+    result["downloaded_models"] = [
+        item["model_name"] for item in downloaded if item["model_name"]
+    ]
+    result["loaded_models"] = [
+        item["model_name"] for item in loaded if item["model_name"]
+    ]
+    return result
 
 
 def _normalize_ollama_host(host: str) -> str:
@@ -571,6 +725,7 @@ def detect_wampserver() -> dict[str, Any]:
 def analyze_machine_inventory(
     tools: list[ToolInstallation],
     ollama: dict[str, Any],
+    voicebox: dict[str, Any],
     wamp: dict[str, Any],
 ) -> list[dict[str, str]]:
     recommendations: list[dict[str, str]] = []
@@ -600,6 +755,26 @@ def analyze_machine_inventory(
                 "recommendation": (
                     "Consider standardizing package-manager versions per project "
                     "using packageManager metadata or a single version manager."
+                ),
+            }
+        )
+
+    if voicebox.get("reachable"):
+        downloaded = int(voicebox.get("downloaded_count", 0) or 0)
+        loaded = int(voicebox.get("loaded_count", 0) or 0)
+        recommendations.append(
+            {
+                "priority": "low",
+                "kind": "voicebox-local-service",
+                "title": (
+                    f"Voicebox detected with {downloaded} downloaded "
+                    f"model(s), {loaded} loaded"
+                ),
+                "recommendation": (
+                    "Keep Voicebox bound to loopback for local use. Its "
+                    "downloaded TTS/STT/LLM models can be reused by the "
+                    "control plane through the local API instead of "
+                    "downloading duplicate copies."
                 ),
             }
         )
@@ -641,9 +816,13 @@ def analyze_machine_inventory(
     return recommendations
 
 
-def scan_machine_inventory(host: str = "") -> MachineInventory:
+def scan_machine_inventory(
+    host: str = "",
+    voicebox_host: str = "",
+) -> MachineInventory:
     tools = detect_toolchain()
     ollama = detect_ollama(host)
+    voicebox = detect_voicebox(voicebox_host)
     wamp = detect_wampserver()
     runtime_managers = detect_runtime_managers()
     package_caches = detect_package_caches()
@@ -655,10 +834,16 @@ def scan_machine_inventory(host: str = "") -> MachineInventory:
         platform_release=platform.release(),
         tools=[item.to_dict() for item in tools],
         ollama=ollama,
+        voicebox=voicebox,
         wampserver=wamp,
         runtime_managers=runtime_managers,
         package_caches=package_caches,
-        recommendations=analyze_machine_inventory(tools, ollama, wamp),
+        recommendations=analyze_machine_inventory(
+            tools,
+            ollama,
+            voicebox,
+            wamp,
+        ),
         errors=[],
     )
 
@@ -685,6 +870,7 @@ __all__ = [
     "WampComponent",
     "analyze_machine_inventory",
     "detect_ollama",
+    "detect_voicebox",
     "detect_package_caches",
     "detect_runtime_managers",
     "detect_toolchain",
