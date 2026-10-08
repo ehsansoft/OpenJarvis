@@ -15,8 +15,14 @@ from openjarvis.core.paths import get_config_dir
 from openjarvis.projects import (
     discover_projects,
     load_registry,
+    scan_cleanup_candidates,
     scan_drive_inventory,
+    scan_duplicate_files,
+    scan_machine_inventory,
+    write_cleanup_report,
+    write_duplicate_report,
     write_inventory,
+    write_machine_inventory,
     write_registry,
 )
 
@@ -69,6 +75,8 @@ def _write_windows_scan_script(
         "$ErrorActionPreference = 'Stop'",
         f"& {python} -m openjarvis.cli projects scan {projects_q} "
         "--max-depth 5",
+        "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+        f"& {python} -m openjarvis.cli projects machine-scan",
         "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
         f"& {python} -m openjarvis.cli projects inventory {root_q} "
         f"--output {output_q} --max-files {max_files}",
@@ -235,6 +243,164 @@ def inventory(
                 f"- [{item['priority']}] {item['title']}: "
                 f"{item['recommendation']}"
             )
+
+
+@projects.command("machine-scan")
+@click.option(
+    "--output",
+    "output_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+)
+@click.option("--json", "as_json", is_flag=True)
+def machine_scan(output_path: Path | None, as_json: bool) -> None:
+    """Detect Ollama models, WampServer runtimes, and developer tool versions."""
+    config = load_config()
+    project_config = config.projects
+    if output_path is None:
+        output_path = Path(project_config.machine_inventory_path).expanduser()
+
+    host = config.engine.ollama.host or os.environ.get("OLLAMA_HOST", "")
+    result = scan_machine_inventory(host)
+    write_machine_inventory(result, output_path)
+
+    if as_json:
+        click.echo(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+        return
+
+    click.echo(f"Machine inventory: {output_path.resolve()}")
+    click.echo(f"Tools detected: {len(result.tools)}")
+    ollama = result.ollama
+    click.echo(
+        "Ollama: "
+        + (
+            f"{ollama.get('model_count', 0)} model(s)"
+            if ollama.get("reachable")
+            else "not reachable"
+        )
+    )
+    wamp = result.wampserver
+    click.echo(
+        f"WampServer: {'detected' if wamp.get('detected') else 'not detected'}"
+    )
+    for item in result.recommendations:
+        click.echo(f"- [{item['priority']}] {item['title']}")
+
+
+@projects.command("cleanup-scan")
+@click.argument(
+    "root",
+    required=False,
+    type=click.Path(path_type=Path, file_okay=False),
+)
+@click.option("--min-age-days", type=click.IntRange(min=0), default=None)
+@click.option(
+    "--output",
+    "output_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+)
+@click.option("--json", "as_json", is_flag=True)
+def cleanup_scan(
+    root: Path | None,
+    min_age_days: int | None,
+    output_path: Path | None,
+    as_json: bool,
+) -> None:
+    """Find stale rebuildable folders without deleting anything."""
+    config = load_config()
+    project_config = config.projects
+    root_path = (
+        root or _default_inventory_root(project_config.inventory_root)
+    ).expanduser().resolve()
+    age = (
+        project_config.cleanup_min_age_days
+        if min_age_days is None
+        else min_age_days
+    )
+    if output_path is None:
+        output_path = Path(project_config.cleanup_report_path).expanduser()
+
+    result = scan_cleanup_candidates(root_path, min_age_days=age)
+    write_cleanup_report(result, output_path)
+
+    if as_json:
+        click.echo(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+        return
+
+    gib = result.estimated_bytes / (1024**3)
+    click.echo(
+        f"Cleanup candidates: {result.candidate_count} "
+        f"(up to {gib:.2f} GiB observed)"
+    )
+    click.echo(f"Report: {output_path.resolve()}")
+    for item in result.candidates[:25]:
+        click.echo(
+            f"- [{item['risk']}] {item['kind']} "
+            f"{item['bytes'] / (1024**2):.1f} MiB -> {item['path']}"
+        )
+
+
+@projects.command("duplicates")
+@click.argument(
+    "root",
+    required=False,
+    type=click.Path(path_type=Path, file_okay=False),
+)
+@click.option("--min-size-mb", type=click.IntRange(min=1), default=None)
+@click.option("--max-files", type=click.IntRange(min=1), default=750_000)
+@click.option(
+    "--output",
+    "output_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+)
+@click.option("--json", "as_json", is_flag=True)
+def duplicates(
+    root: Path | None,
+    min_size_mb: int | None,
+    max_files: int,
+    output_path: Path | None,
+    as_json: bool,
+) -> None:
+    """Verify exact duplicate files with hashes; never delete them."""
+    config = load_config()
+    project_config = config.projects
+    root_path = (
+        root or _default_inventory_root(project_config.inventory_root)
+    ).expanduser().resolve()
+    min_mb = (
+        project_config.duplicate_min_size_mb
+        if min_size_mb is None
+        else min_size_mb
+    )
+    if output_path is None:
+        output_path = Path(project_config.duplicate_report_path).expanduser()
+
+    result = scan_duplicate_files(
+        root_path,
+        min_size_bytes=min_mb * 1024 * 1024,
+        max_files=max_files,
+    )
+    write_duplicate_report(result, output_path)
+
+    if as_json:
+        click.echo(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+        return
+
+    gib = result.reclaimable_bytes / (1024**3)
+    click.echo(
+        f"Exact duplicate groups: {len(result.duplicate_groups)} "
+        f"(potential reclaim {gib:.2f} GiB)"
+    )
+    click.echo(f"Report: {output_path.resolve()}")
+    if result.truncated:
+        click.echo("WARNING: duplicate scan hit max-files and is incomplete.")
+    for group in result.duplicate_groups[:20]:
+        click.echo(
+            f"- {group['size'] / (1024**2):.1f} MiB x "
+            f"{len(group['files'])}: {group['files'][0]}"
+        )
 
 
 @projects.command("install-scan-task")
