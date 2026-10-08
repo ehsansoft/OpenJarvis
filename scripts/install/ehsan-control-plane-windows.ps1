@@ -10,6 +10,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$InstallerVersion = "0.1.0-alpha.2"
 
 function Refresh-Path {
     $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
@@ -99,48 +100,63 @@ try {
     }
 
     $ConfigPath = Join-Path $StateRoot "config.toml"
+    $Preset = Join-Path $InstallRoot "configs\openjarvis\examples\ehsan-control-plane.toml"
     if (-not (Test-Path $ConfigPath)) {
-        $Preset = Join-Path $InstallRoot "configs\openjarvis\examples\ehsan-control-plane.toml"
         Copy-Item $Preset $ConfigPath
-        $Text = Get-Content $ConfigPath -Raw
-        $Text = $Text.Replace("D:\\Projects", $ProjectsRoot.Replace("\", "\\"))
-        $Text = $Text.Replace(
-            "D:\\AI-Control\\registry\\projects.json",
-            (Join-Path $StateRoot "registry\projects.json").Replace("\", "\\")
-        )
-        $Text = $Text.Replace(
-            "D:\\AI-Control\\registry\\drive-inventory.json",
-            (Join-Path $StateRoot "registry\drive-inventory.json").Replace("\", "\\")
-        )
-        $Text = $Text.Replace(
-            "D:\\AI-Control\\registry\\machine-inventory.json",
-            (Join-Path $StateRoot "registry\machine-inventory.json").Replace("\", "\\")
-        )
-        $Text = $Text.Replace(
-            "D:\\AI-Control\\registry\\cleanup-report.json",
-            (Join-Path $StateRoot "registry\cleanup-report.json").Replace("\", "\\")
-        )
-        $Text = $Text.Replace(
-            "D:\\AI-Control\\registry\\duplicate-report.json",
-            (Join-Path $StateRoot "registry\duplicate-report.json").Replace("\", "\\")
-        )
-        Set-Content -Path $ConfigPath -Value $Text -Encoding utf8
+    } else {
+        $backup = "$ConfigPath.pre-alpha2-backup"
+        if (-not (Test-Path $backup)) {
+            Copy-Item $ConfigPath $backup
+        }
     }
 
-    & $UvExe run jarvis projects scan $ProjectsRoot --max-depth 5
-    & $UvExe run jarvis projects machine-scan
-    & $UvExe run jarvis model free
+    # Normalize paths and repair alpha.1 configs. Windows PowerShell 5.1
+    # writes a UTF-8 BOM for Set-Content -Encoding utf8; Python tomllib
+    # rejects that BOM. Write UTF-8 without BOM explicitly.
+    $Text = Get-Content $ConfigPath -Raw
+    $Text = $Text.Replace("D:\\Projects", $ProjectsRoot.Replace("\", "\\"))
+    $Text = $Text.Replace(
+        "D:\\AI-Control\\registry",
+        (Join-Path $StateRoot "registry").Replace("\", "\\")
+    )
+    $Text = $Text.Replace(
+        'default_model = "qwen3:4b"',
+        'default_model = ""'
+    )
+    $Text = $Text.Replace(
+        'model_code = "qwen3:4b"',
+        'model_code = "free/code"'
+    )
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($ConfigPath, $Text, $Utf8NoBom)
+
+    # Validate the exact config the application will load before scans.
+    & $UvExe run python -c "import pathlib,tomllib,sys; p=pathlib.Path(sys.argv[1]); tomllib.loads(p.read_text(encoding='utf-8-sig')); print('Config TOML OK:', p)" $ConfigPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Config validation failed: $ConfigPath"
+    }
+
+    function Run-JarvisChecked {
+        param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Args)
+        & $UvExe run jarvis @Args
+        if ($LASTEXITCODE -ne 0) {
+            throw "jarvis command failed: $($Args -join ' ')"
+        }
+    }
+    Run-JarvisChecked projects scan $ProjectsRoot --max-depth 5
+    Run-JarvisChecked projects machine-scan
+    Run-JarvisChecked model free
 
     if ($InitialInventory) {
-        & $UvExe run jarvis projects inventory $InventoryRoot
+        Run-JarvisChecked projects inventory $InventoryRoot
     }
 
     if ($InstallScanTask) {
-        & $UvExe run jarvis projects install-scan-task --root $InventoryRoot --daily-at 03:00
+        Run-JarvisChecked projects install-scan-task --root $InventoryRoot --daily-at 03:00
     }
 
     Write-Host ""
-    Write-Host "OpenJarvis control plane installed." -ForegroundColor Green
+    Write-Host "OpenJarvis control plane $InstallerVersion installed." -ForegroundColor Green
     Write-Host "Install root: $InstallRoot"
     Write-Host "State root:   $StateRoot"
     Write-Host "Projects:     $ProjectsRoot"
