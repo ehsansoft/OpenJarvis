@@ -128,9 +128,16 @@ def scan_projects(
     if not no_write:
         write_registry(records, registry_path, root=root_path)
 
+    role_counts: dict[str, int] = {}
+    for record in records:
+        role_counts[record.role] = role_counts.get(record.role, 0) + 1
+
     payload = {
         "root": str(root_path),
         "count": len(records),
+        "active_count": role_counts.get("active", 0),
+        "reference_count": role_counts.get("reference", 0),
+        "archive_count": role_counts.get("archive", 0),
         "registry": "" if no_write else str(registry_path.resolve()),
         "projects": [record.to_dict() for record in records],
     }
@@ -138,13 +145,18 @@ def scan_projects(
         click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
         return
 
-    click.echo(f"Discovered {len(records)} project(s) under {root_path}")
+    click.echo(
+        f"Discovered {len(records)} roots under {root_path}: "
+        f"{role_counts.get('active', 0)} active, "
+        f"{role_counts.get('reference', 0)} reference, "
+        f"{role_counts.get('archive', 0)} archive"
+    )
     if not no_write:
         click.echo(f"Registry: {registry_path.resolve()}")
     for record in records:
         langs = ", ".join(record.languages) or "-"
         click.echo(
-            f"- {record.project_id}: {record.project_type} "
+            f"- {record.project_id}: {record.project_type}/{record.role} "
             f"[{langs}] -> {record.path}"
         )
 
