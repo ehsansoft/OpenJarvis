@@ -568,6 +568,20 @@ class TestStreamableHTTPTransport:
         return mock_response
 
     @patch("httpx.Client")
+    def test_http_transport_follows_mounted_endpoint_redirects(
+        self, mock_client_cls
+    ):
+        mock_client_cls.return_value = MagicMock()
+        transport = StreamableHTTPTransport(
+            "http://127.0.0.1:17493/mcp"
+        )
+        try:
+            kwargs = mock_client_cls.call_args.kwargs
+            assert kwargs["follow_redirects"] is True
+        finally:
+            transport.close()
+
+    @patch("httpx.Client")
     def test_send_receive(self, mock_client_cls):
         """Mock httpx.Client to simulate HTTP response."""
         mock_client = MagicMock()
