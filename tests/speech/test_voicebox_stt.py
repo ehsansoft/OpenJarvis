@@ -2,11 +2,27 @@
 
 from __future__ import annotations
 
-import json
-
 import httpx
 
 from openjarvis.speech.voicebox_stt import VoiceboxSpeechBackend
+
+
+def test_private_voicebox_stt_refuses_unloaded_model_without_transcribing():
+    import pytest
+
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, json={"models": []})
+
+    client = httpx.Client(
+        base_url="http://localhost", transport=httpx.MockTransport(handler)
+    )
+    with pytest.raises(RuntimeError, match="Load cached Whisper"):
+        VoiceboxSpeechBackend(client=client, require_loaded=True).transcribe(b"fixture")
+    assert calls == ["/models/status"]
+    client.close()
 
 
 def test_voicebox_stt_health_and_transcription() -> None:

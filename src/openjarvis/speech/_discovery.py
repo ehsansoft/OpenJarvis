@@ -35,6 +35,7 @@ def _create_backend(
             return backend_cls(
                 host=config.projects.voicebox_host,
                 model_size=config.speech.model,
+                require_loaded=config.intelligence.private_routing,
             )
         if key == "faster-whisper":
             return backend_cls(

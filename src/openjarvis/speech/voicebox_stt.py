@@ -40,6 +40,7 @@ class VoiceboxSpeechBackend(SpeechBackend):
         model_size: str = "base",
         timeout: float = 180.0,
         client: httpx.Client | None = None,
+        require_loaded: bool = False,
     ) -> None:
         self._host = _normalize_host(host)
         self._model_size = model_size or "base"
@@ -50,6 +51,7 @@ class VoiceboxSpeechBackend(SpeechBackend):
             timeout=httpx.Timeout(timeout, connect=5.0),
         )
         self._last_error: Optional[str] = None
+        self._require_loaded = require_loaded
 
     def transcribe(
         self,
@@ -69,6 +71,15 @@ class VoiceboxSpeechBackend(SpeechBackend):
             data["language"] = language
 
         try:
+            if self._require_loaded:
+                status = self._client.get("/models/status")
+                status.raise_for_status()
+                if not any(
+                    m.get("model_name") == f"whisper-{self._model_size}"
+                    and m.get("loaded")
+                    for m in status.json().get("models", [])
+                ):
+                    raise RuntimeError("Load cached Whisper in Voicebox first")
             response = self._client.post(
                 "/transcribe",
                 files={"file": (filename, audio, content_type)},
@@ -78,17 +89,11 @@ class VoiceboxSpeechBackend(SpeechBackend):
             payload = response.json()
         except Exception as exc:
             self._last_error = str(exc)
-            raise RuntimeError(
-                f"Voicebox transcription failed: {exc}"
-            ) from exc
+            raise RuntimeError(f"Voicebox transcription failed: {exc}") from exc
 
         text = str(payload.get("text") or "").strip()
         duration = float(payload.get("duration") or 0.0)
-        resolved_language = (
-            payload.get("language")
-            or language
-            or None
-        )
+        resolved_language = payload.get("language") or language or None
         self._last_error = None
 
         segments = []
