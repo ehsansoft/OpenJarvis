@@ -67,6 +67,8 @@ class MachineInventory:
     tools: list[dict[str, Any]]
     ollama: dict[str, Any]
     wampserver: dict[str, Any]
+    runtime_managers: dict[str, Any]
+    package_caches: list[dict[str, Any]]
     recommendations: list[dict[str, str]]
     errors: list[str]
 
@@ -98,7 +100,30 @@ _TOOL_COMMANDS: dict[str, tuple[str, list[str]]] = {
     "winget": ("winget", ["--version"]),
     "choco": ("choco", ["--version"]),
     "scoop": ("scoop", ["--version"]),
+    "nvm": ("nvm", ["version"]),
+    "fnm": ("fnm", ["--version"]),
+    "volta": ("volta", ["--version"]),
 }
+
+
+def _run_full(
+    executable: str,
+    args: list[str],
+    *,
+    timeout: float = 8.0,
+) -> str:
+    try:
+        result = subprocess.run(
+            [executable, *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            errors="replace",
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return ""
+    return (result.stdout or result.stderr or "").strip()
 
 
 def _run(
@@ -152,6 +177,66 @@ def _where_all(executable: str) -> list[str]:
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
             pass
     return paths
+
+
+def detect_runtime_managers() -> dict[str, Any]:
+    managers: dict[str, Any] = {}
+    commands = {
+        "nvm": ["list"],
+        "fnm": ["list"],
+        "volta": ["list", "node"],
+    }
+    for name, args in commands.items():
+        locations = _where_all(name)
+        if not locations:
+            continue
+        output = _run_full(locations[0], args)
+        managers[name] = {
+            "executable": locations[0],
+            "installed": [
+                line.strip()
+                for line in output.splitlines()
+                if line.strip()
+            ][:100],
+        }
+    return managers
+
+
+def detect_package_caches() -> list[dict[str, Any]]:
+    probes = (
+        ("npm", ["config", "get", "cache"]),
+        ("pnpm", ["store", "path"]),
+        ("yarn", ["cache", "dir"]),
+        ("pip", ["cache", "dir"]),
+        ("uv", ["cache", "dir"]),
+        ("composer", ["config", "cache-dir"]),
+    )
+    caches: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for name, args in probes:
+        locations = _where_all(name)
+        if not locations:
+            continue
+        raw = _run_full(locations[0], args)
+        if not raw:
+            continue
+        first = raw.splitlines()[0].strip().strip('"')
+        if not first:
+            continue
+        path = Path(first).expanduser()
+        key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        caches.append(
+            {
+                "manager": name,
+                "path": str(path),
+                "exists": path.exists(),
+            }
+        )
+    return caches
 
 
 def detect_toolchain() -> list[ToolInstallation]:
@@ -388,6 +473,8 @@ def scan_machine_inventory(host: str = "") -> MachineInventory:
     tools = detect_toolchain()
     ollama = detect_ollama(host)
     wamp = detect_wampserver()
+    runtime_managers = detect_runtime_managers()
+    package_caches = detect_package_caches()
     return MachineInventory(
         schema_version=1,
         generated_at=datetime.now(timezone.utc).isoformat(),
@@ -397,6 +484,8 @@ def scan_machine_inventory(host: str = "") -> MachineInventory:
         tools=[item.to_dict() for item in tools],
         ollama=ollama,
         wampserver=wamp,
+        runtime_managers=runtime_managers,
+        package_caches=package_caches,
         recommendations=analyze_machine_inventory(tools, ollama, wamp),
         errors=[],
     )
@@ -424,6 +513,8 @@ __all__ = [
     "WampComponent",
     "analyze_machine_inventory",
     "detect_ollama",
+    "detect_package_caches",
+    "detect_runtime_managers",
     "detect_toolchain",
     "detect_wampserver",
     "scan_machine_inventory",
