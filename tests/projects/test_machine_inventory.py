@@ -40,6 +40,66 @@ def test_machine_recommends_path_cleanup_for_multiple_node_installs() -> None:
     )
 
 
+def test_wamp_detection_maps_versions_vhosts_and_wordpress(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "wamp64"
+    conf = root / "wampmanager.conf"
+    conf.parent.mkdir(parents=True)
+    conf.write_text(
+        'phpVersion = "8.3.1"\n'
+        'apacheVersion = "2.4.62"\n'
+        'mysqlVersion = "8.0.40"\n',
+        encoding="utf-8",
+    )
+
+    vhosts = (
+        root
+        / "bin"
+        / "apache"
+        / "apache2.4.62"
+        / "conf"
+        / "extra"
+        / "httpd-vhosts.conf"
+    )
+    vhosts.parent.mkdir(parents=True)
+    site = root / "www" / "demo"
+    site.mkdir(parents=True)
+    (site / "wp-config.php").write_text("<?php", encoding="utf-8")
+    vhosts.write_text(
+        "<VirtualHost *:80>\n"
+        "ServerName demo.local\n"
+        f'DocumentRoot "{site}"\n'
+        "</VirtualHost>\n",
+        encoding="utf-8",
+    )
+
+    with (
+        mock.patch(
+            "openjarvis.projects.machine_inventory._candidate_wamp_roots",
+            return_value=[root],
+        ),
+        mock.patch(
+            "openjarvis.projects.machine_inventory._service_state",
+            return_value="",
+        ),
+        mock.patch(
+            "openjarvis.projects.machine_inventory._port_open",
+            return_value=False,
+        ),
+        mock.patch(
+            "openjarvis.projects.machine_inventory._windows_hosts_entries",
+            return_value=[],
+        ),
+    ):
+        result = detect_wampserver()
+
+    assert result["active_versions"]["php"] == "8.3.1"
+    assert result["active_versions"]["apache"] == "2.4.62"
+    assert result["virtual_hosts"][0]["server_name"] == "demo.local"
+    assert str(site) in result["wordpress_sites"]
+
+
 def test_wamp_detection_finds_runtime_components(tmp_path: Path) -> None:
     root = tmp_path / "wamp64"
     php = root / "bin" / "php" / "php8.3.1" / "php.exe"
