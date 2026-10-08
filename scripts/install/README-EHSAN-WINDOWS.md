@@ -1,6 +1,6 @@
 # Ehsan OpenJarvis Windows Test Installer
 
-Version: 0.1.0-alpha.4
+Version: 0.1.0-alpha.4.1
 
 This installer targets the development branch:
 
@@ -106,3 +106,7 @@ With Voicebox running, double-click `Voicebox-Probe.cmd`. It queries `/health` a
 - WampServer WordPress roots are deduplicated case-insensitively.
 
 Keep Voicebox open during repair and first-run if you want the MCP and Whisper bridge verified.
+
+## Alpha.4.1 hotfix
+
+Windows PowerShell 5.1 can leave a stale `$LASTEXITCODE` after a native command executes inside a child scriptblock piped through `ForEach-Object`. Alpha.4 incorrectly interpreted that stale caller value as failure even though `git fetch`, `git switch`, and `git pull` had succeeded. Alpha.4.1 checks required native exit codes immediately inside each step and treats a captured step as successful when it completes without throwing.
