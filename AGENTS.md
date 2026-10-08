@@ -61,6 +61,7 @@ MCP when available rather than relying on memory.
 - Editor API: `http://127.0.0.1:8000/router/v1`
 - Personal API: `http://127.0.0.1:8000/v1`
 - Primary editor alias: `free/code`
+- Private project editor alias: `local/code` (Phase 0.5 personal preset)
 
 Treat these as configurable defaults, not universal constants.
 
@@ -69,8 +70,17 @@ Run focused tests for the touched subsystem, then at minimum:
 
 ```powershell
 $env:OPENJARVIS_HOME="D:\AI-Control\OpenJarvis"
-uv run pytest tests/core/test_config.py tests/core/test_control_plane_config.py tests/core/test_ehsan_control_plane_upgrade.py tests/engine/test_nararouter.py tests/intelligence/test_free_pool.py tests/projects/test_discovery.py tests/projects/test_inventory.py tests/projects/test_machine_inventory.py tests/projects/test_hygiene.py tests/tools/test_voicebox_status.py tests/speech/test_voicebox_stt.py tests/mcp/test_transport.py tests/mcp/test_loader.py tests/security/test_rate_limiter.py tests/server/test_routes.py -q
+$pytestRun = Join-Path $env:TEMP ('openjarvis-tests-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $pytestRun | Out-Null
+uv run pytest tests/core/test_config.py tests/core/test_control_plane_config.py tests/core/test_ehsan_control_plane_upgrade.py tests/core/test_ehsan_finalizer.py tests/core/test_voicebox_mcp_check.py tests/cli/test_projects_cmd.py tests/engine/test_nararouter.py tests/intelligence/test_free_pool.py tests/projects/test_discovery.py tests/projects/test_inventory.py tests/projects/test_machine_inventory.py tests/projects/test_hygiene.py tests/tools/test_voicebox_status.py tests/speech/test_voicebox_stt.py tests/mcp/test_transport.py tests/mcp/test_loader.py tests/security/test_rate_limiter.py tests/server/test_routes.py -q --basetemp "$pytestRun\temp" -o "cache_dir=$pytestRun\cache"
 ```
 
 When the suite passes, run the real-machine finalizer and inspect its ZIP rather
 than declaring success from unit tests alone.
+For Phase 0.5, also run `uv run jarvis acceptance --live` and inspect the report's
+BLOCKED/MANUAL_REQUIRED entries before enabling personal automations. The setup
+and routing policy are in `docs/EHSAN_REAL_USER_ACCEPTANCE.md`.
+
+Use per-run pytest directories on Windows: earlier elevated runs can leave
+inaccessible cache/temp directories. Do not delete or change their ACLs merely
+to get a test run to finish.

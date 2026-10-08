@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,12 +23,33 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-
 VERSION = "0.1.0-alpha.4.3"
 
 
 def _stamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def write_evidence_zip(run_dir: Path, destination: Path) -> None:
+    """Bundle numbered reports only, excluding pytest fixtures and databases."""
+    with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(run_dir.iterdir()):
+            if (
+                not path.is_file()
+                or path.is_symlink()
+                or not re.fullmatch(r"\d{2}-[\w-]+\.(txt|json)", path.name)
+            ):
+                continue
+            content = path.read_text(encoding="utf-8", errors="replace")
+            content = re.sub(r"bot\d{5,}:[A-Za-z0-9_-]+", "bot[REDACTED]", content)
+            content = re.sub(r"(?i)(bearer\s+)[^\s\"']+", r"\1[REDACTED]", content)
+            for key, value in os.environ.items():
+                if len(value) >= 8 and any(
+                    marker in key.upper()
+                    for marker in ("TOKEN", "API_KEY", "SECRET", "PASSWORD")
+                ):
+                    content = content.replace(value, "[REDACTED]")
+            archive.writestr(path.name, content)
 
 
 class Finalizer:
@@ -78,9 +100,10 @@ class Finalizer:
             output = proc.stdout or ""
             code = proc.returncode
         except subprocess.TimeoutExpired as exc:
-            output = (exc.stdout or "") + "\nTIMEOUT\n"
+            output = exc.stdout or ""
             if isinstance(output, bytes):
                 output = output.decode("utf-8", errors="replace")
+            output += "\nTIMEOUT\n"
             code = 124
 
         print(output.rstrip())
@@ -143,7 +166,9 @@ class Finalizer:
         )
         ok, payload = self._http_get_json(
             "http://127.0.0.1:8000/router/v1/models",
-            timeout=2,
+            # A live free-provider roster refresh can exceed a local probe's
+            # two-second timeout even when the existing server is healthy.
+            timeout=30,
         )
         health_ok, _health_payload = self._http_get_json(
             "http://127.0.0.1:8000/health",
@@ -159,7 +184,9 @@ class Finalizer:
                 "/router/v1 discovery endpoint can be verified."
             )
 
-        if not ok or not root_ok:
+        # Do not start a competing server when an existing one responds but
+        # its model discovery fails. Report that failure on the existing API.
+        if not (root_ok or health_ok):
             log_path = self.run_dir / "12-server-process.txt"
             log_handle = log_path.open("w", encoding="utf-8")
             process = subprocess.Popen(
@@ -191,7 +218,7 @@ class Finalizer:
                 )
                 ok, payload = self._http_get_json(
                     "http://127.0.0.1:8000/router/v1/models",
-                    timeout=2,
+                    timeout=30,
                 )
                 if ok and root_ok:
                     break
@@ -205,9 +232,7 @@ class Finalizer:
             data = payload.get("data")
             if isinstance(data, list):
                 report["model_ids"] = [
-                    item.get("id")
-                    for item in data
-                    if isinstance(item, dict)
+                    item.get("id") for item in data if isinstance(item, dict)
                 ]
 
         if process is not None:
@@ -242,9 +267,7 @@ class Finalizer:
         print("Editor gateway reachable.")
         print(
             "Models: "
-            + ", ".join(
-                model for model in report.get("model_ids", []) if model
-            )[:1000]
+            + ", ".join(model for model in report.get("model_ids", []) if model)[:1000]
         )
 
     def copy_editor_templates(self) -> None:
@@ -263,7 +286,7 @@ class Finalizer:
                     "destination": str(destination),
                     "files": copied,
                     "base_url": "http://127.0.0.1:8000/router/v1",
-                    "recommended_model": "free/code",
+                    "recommended_model": "local/code",
                 },
                 indent=2,
             ),
@@ -294,6 +317,26 @@ class Finalizer:
                 "tests/core/test_config.py",
                 "tests/core/test_control_plane_config.py",
                 "tests/core/test_ehsan_control_plane_upgrade.py",
+                "tests/core/test_ehsan_finalizer.py",
+                "tests/core/test_voicebox_mcp_check.py",
+                "tests/core/test_real_user_acceptance.py",
+                "tests/core/test_acceptance_cmd.py",
+                "tests/security/test_capabilities.py",
+                "tests/cli/test_standalone_security.py",
+                "tests/operators/test_operators.py",
+                "tests/server/test_mcp_tools_cache.py",
+                "tests/scheduler",
+                "tests/channels/test_telegram.py",
+                "tests/server/test_channel_bridge.py",
+                "tests/server/test_editor_gateway.py",
+                "tests/server/test_research_planner.py",
+                "tests/skills/test_sources.py",
+                "tests/skills/test_importer.py",
+                "tests/cli/test_chat_cmd.py",
+                "tests/cli/test_memory_cmd.py",
+                "tests/cli/test_serve_single_build.py",
+                "tests/speech/test_voicebox_tts.py",
+                "tests/cli/test_projects_cmd.py",
                 "tests/engine/test_nararouter.py",
                 "tests/intelligence/test_free_pool.py",
                 "tests/projects/test_discovery.py",
@@ -307,6 +350,12 @@ class Finalizer:
                 "tests/mcp/test_loader.py",
                 "tests/security/test_rate_limiter.py",
                 "tests/server/test_routes.py",
+                # Old elevated Windows runs may leave inaccessible pytest
+                # directories. Keep this run independent without deleting them.
+                "--basetemp",
+                str(self.run_dir / "pytest-temp"),
+                "-o",
+                f"cache_dir={self.run_dir / 'pytest-cache'}",
                 "-q",
             ],
             timeout=1200,
@@ -424,7 +473,7 @@ class Finalizer:
             "voicebox_reachable": voicebox,
             "editor_api": "http://127.0.0.1:8000/router/v1",
             "personal_api": "http://127.0.0.1:8000/v1",
-            "recommended_editor_model": "free/code",
+            "recommended_editor_model": "local/code",
             "results": self.results,
         }
         (self.run_dir / "00-final-summary.json").write_text(
@@ -432,21 +481,8 @@ class Finalizer:
             encoding="utf-8",
         )
 
-        zip_path = (
-            self.support_root
-            / f"openjarvis-finalize-alpha4.3-{_stamp()}.zip"
-        )
-        with zipfile.ZipFile(
-            zip_path,
-            "w",
-            compression=zipfile.ZIP_DEFLATED,
-        ) as archive:
-            for path in sorted(self.run_dir.rglob("*")):
-                if path.is_file():
-                    archive.write(
-                        path,
-                        arcname=path.relative_to(self.run_dir),
-                    )
+        zip_path = self.support_root / f"openjarvis-finalize-alpha4.3-{_stamp()}.zip"
+        write_evidence_zip(self.run_dir, zip_path)
         return zip_path
 
 
@@ -493,17 +529,7 @@ def main() -> int:
             finalizer.support_root
             / f"openjarvis-finalize-alpha4.3-failed-{_stamp()}.zip"
         )
-        with zipfile.ZipFile(
-            failure_zip,
-            "w",
-            compression=zipfile.ZIP_DEFLATED,
-        ) as archive:
-            for path in sorted(finalizer.run_dir.rglob("*")):
-                if path.is_file():
-                    archive.write(
-                        path,
-                        arcname=path.relative_to(finalizer.run_dir),
-                    )
+        write_evidence_zip(finalizer.run_dir, failure_zip)
         print(f"\nFINALIZE FAILED: {exc}", file=sys.stderr)
         print(f"Evidence: {failure_zip}", file=sys.stderr)
         return 1
@@ -511,7 +537,7 @@ def main() -> int:
     print("\nOpenJarvis finalization complete.")
     print(f"Support ZIP: {zip_path}")
     print("Editor API: http://127.0.0.1:8000/router/v1")
-    print("Editor model: free/code")
+    print("Editor model: local/code")
     return 0
 
 

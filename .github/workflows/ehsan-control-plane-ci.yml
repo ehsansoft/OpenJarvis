@@ -12,11 +12,15 @@ jobs:
   windows-control-plane:
     runs-on: windows-latest
     timeout-minutes: 30
-    env:
-      OPENJARVIS_HOME: ${{ runner.temp }}\openjarvis-state
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set isolated state directory
+        shell: pwsh
+        run: |
+          $stateRoot = Join-Path $env:RUNNER_TEMP 'openjarvis-state'
+          "OPENJARVIS_HOME=$stateRoot" >> $env:GITHUB_ENV
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -27,7 +31,7 @@ jobs:
         run: python -m pip install uv
 
       - name: Sync test dependencies
-        run: uv sync --python 3.13 --extra dev --extra server
+        run: uv sync --python 3.13 --extra dev --extra server --group desktop-native
 
       - name: Ruff
         run: uv run ruff check src/ tests/
@@ -53,6 +57,22 @@ jobs:
             tests/cli/test_projects_windows_task.py `
             tests/core/test_control_plane_config.py `
             tests/core/test_ehsan_control_plane_upgrade.py `
+            tests/core/test_ehsan_finalizer.py `
+            tests/core/test_voicebox_mcp_check.py `
+            tests/core/test_real_user_acceptance.py `
+            tests/core/test_acceptance_cmd.py `
+            tests/security/test_capabilities.py `
+            tests/cli/test_standalone_security.py `
+            tests/operators/test_operators.py `
+            tests/server/test_mcp_tools_cache.py `
+            tests/scheduler/ `
+            tests/channels/test_telegram.py `
+            tests/server/test_channel_bridge.py `
+            tests/skills/test_sources.py `
+            tests/skills/test_importer.py `
+            tests/cli/test_chat_cmd.py `
+            tests/cli/test_memory_cmd.py `
+            tests/speech/test_voicebox_tts.py `
             tests/speech/test_voicebox_stt.py `
             tests/speech/test_discovery.py `
             tests/mcp/test_transport.py `

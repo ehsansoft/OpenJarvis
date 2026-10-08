@@ -94,7 +94,7 @@ try {
     & $UvExe python install 3.13
     if ($LASTEXITCODE -ne 0) { throw "Python 3.13 setup failed." }
 
-    & $UvExe sync --python 3.13 --extra dev --extra server --extra desktop
+    & $UvExe sync --python 3.13 --extra dev --extra server --extra desktop --group desktop-native
     if ($LASTEXITCODE -ne 0) { throw "uv sync failed." }
 
     $ConfigPath = Join-Path $StateRoot "config.toml"
