@@ -1,6 +1,6 @@
 {
   "name": "Ehsan OpenJarvis Control Plane",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.4.1",
   "branch": "feature/ehsan-control-plane-foundation",
   "repo": "https://github.com/ehsansoft/OpenJarvis.git",
   "defaults": {
