@@ -1,6 +1,6 @@
 {
   "name": "Ehsan OpenJarvis Control Plane",
-  "version": "0.1.0-alpha.4.1",
+  "version": "0.1.0-alpha.4.2",
   "branch": "feature/ehsan-control-plane-foundation",
   "repo": "https://github.com/ehsansoft/OpenJarvis.git",
   "defaults": {
@@ -18,6 +18,7 @@
     "repair": "Repair-Ehsan-OpenJarvis.cmd",
     "voicebox_probe": "Voicebox-Probe.cmd",
     "config_upgrade": "Upgrade-Ehsan-Config.py",
-    "voicebox_mcp_check": "Check-Voicebox-MCP.py"
+    "voicebox_mcp_check": "Check-Voicebox-MCP.py",
+    "finalize": "Finalize-Ehsan-OpenJarvis.cmd"
   }
 }
