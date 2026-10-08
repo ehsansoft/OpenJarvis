@@ -58,6 +58,8 @@ class VoiceboxStatusTool(BaseTool):
             payload = status.get("health", {})
         elif section == "storage":
             payload = status.get("storage_roots", [])
+        elif section == "profiles":
+            payload = status.get("profiles", [])
         else:
             payload = {
                 "host": status.get("host", ""),
@@ -65,6 +67,8 @@ class VoiceboxStatusTool(BaseTool):
                 "model_count": status.get("model_count", 0),
                 "downloaded_count": status.get("downloaded_count", 0),
                 "loaded_count": status.get("loaded_count", 0),
+                "available_count": status.get("available_count", 0),
+                "profile_count": status.get("profile_count", 0),
                 "downloaded_models": status.get("downloaded_models", []),
                 "loaded_models": status.get("loaded_models", []),
                 "docs_url": status.get("docs_url", ""),
