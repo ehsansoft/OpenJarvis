@@ -70,6 +70,7 @@ class MachineInventory:
     wampserver: dict[str, Any]
     runtime_managers: dict[str, Any]
     package_caches: list[dict[str, Any]]
+    hardware: dict[str, Any]
     recommendations: list[dict[str, str]]
     errors: list[str]
 
@@ -124,7 +125,8 @@ def _run_full(
         )
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
         return ""
-    return (result.stdout or result.stderr or "").strip()
+    output = (result.stdout or result.stderr or "").replace("\x00", "")
+    return output.strip()
 
 
 def _run(
@@ -133,19 +135,7 @@ def _run(
     *,
     timeout: float = 8.0,
 ) -> str:
-    try:
-        result = subprocess.run(
-            [executable, *args],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-            errors="replace",
-        )
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-        return ""
-
-    output = (result.stdout or result.stderr or "").strip()
+    output = _run_full(executable, args, timeout=timeout)
     return output.splitlines()[0].strip() if output else ""
 
 
@@ -180,6 +170,110 @@ def _where_all(executable: str) -> list[str]:
     return paths
 
 
+def _powershell_json(script: str, *, timeout: float = 10.0) -> Any:
+    if os.name != "nt":
+        return None
+    output = _run_full(
+        "powershell.exe",
+        ["-NoProfile", "-Command", script],
+        timeout=timeout,
+    )
+    if not output:
+        return None
+    try:
+        return json.loads(output)
+    except json.JSONDecodeError:
+        return None
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def detect_hardware() -> dict[str, Any]:
+    """Detect CPU, memory, GPUs and fixed-drive capacity without mutation."""
+    result: dict[str, Any] = {
+        "cpu": [],
+        "memory": {},
+        "gpus": [],
+        "disks": [],
+    }
+    if os.name != "nt":
+        return result
+
+    cpu = _powershell_json(
+        "Get-CimInstance Win32_Processor | "
+        "Select-Object Name,NumberOfCores,NumberOfLogicalProcessors,"
+        "MaxClockSpeed | ConvertTo-Json -Compress"
+    )
+    result["cpu"] = _as_list(cpu)
+
+    memory = _powershell_json(
+        "Get-CimInstance Win32_ComputerSystem | "
+        "Select-Object Manufacturer,Model,TotalPhysicalMemory | "
+        "ConvertTo-Json -Compress"
+    )
+    if isinstance(memory, dict):
+        result["memory"] = memory
+
+    gpus = _powershell_json(
+        "Get-CimInstance Win32_VideoController | "
+        "Select-Object Name,AdapterRAM,DriverVersion,VideoProcessor | "
+        "ConvertTo-Json -Compress"
+    )
+    result["gpus"] = _as_list(gpus)
+
+    nvidia = _where_all("nvidia-smi")
+    if nvidia:
+        output = _run_full(
+            nvidia[0],
+            [
+                "--query-gpu=name,memory.total,driver_version",
+                "--format=csv,noheader,nounits",
+            ],
+            timeout=8,
+        )
+        parsed: list[dict[str, Any]] = []
+        for line in output.splitlines():
+            parts = [part.strip() for part in line.split(",")]
+            if len(parts) >= 3:
+                parsed.append(
+                    {
+                        "name": parts[0],
+                        "memory_total_mb": parts[1],
+                        "driver_version": parts[2],
+                        "source": "nvidia-smi",
+                    }
+                )
+        if parsed:
+            result["nvidia"] = parsed
+
+    disks = _powershell_json(
+        "Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=3\" | "
+        "Select-Object DeviceID,VolumeName,FileSystem,Size,FreeSpace | "
+        "ConvertTo-Json -Compress"
+    )
+    result["disks"] = _as_list(disks)
+    return result
+
+
+def _detect_port_listeners(port: int) -> list[dict[str, Any]]:
+    if os.name != "nt":
+        return []
+    script = (
+        f"Get-NetTCPConnection -LocalPort {port} -State Listen "
+        "| Select-Object LocalAddress,LocalPort,OwningProcess "
+        "| ConvertTo-Json -Compress"
+    )
+    return [
+        item
+        for item in _as_list(_powershell_json(script, timeout=5))
+        if isinstance(item, dict)
+    ]
+
+
 def detect_runtime_managers() -> dict[str, Any]:
     managers: dict[str, Any] = {}
     commands = {
@@ -210,7 +304,7 @@ def detect_package_caches() -> list[dict[str, Any]]:
         ("yarn", ["cache", "dir"]),
         ("pip", ["cache", "dir"]),
         ("uv", ["cache", "dir"]),
-        ("composer", ["config", "cache-dir"]),
+        ("composer", ["config", "--global", "cache-dir"]),
     )
     caches: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -223,7 +317,12 @@ def detect_package_caches() -> list[dict[str, Any]]:
         if not raw:
             continue
         first = raw.splitlines()[0].strip().strip('"')
-        if not first:
+        if (
+            not first
+            or first.lower().startswith("in ")
+            or "error" in first.lower()
+            or ":" in first and not Path(first).drive
+        ):
             continue
         path = Path(first).expanduser()
         key = str(path).lower()
@@ -325,6 +424,78 @@ def _voicebox_storage_roots() -> list[dict[str, Any]]:
     return results
 
 
+def _voicebox_engine_and_category(
+    model_name: str,
+    hf_repo_id: str,
+    engine: str,
+) -> tuple[str, str]:
+    if engine:
+        normalized = engine.lower()
+    else:
+        lowered = f"{model_name} {hf_repo_id}".lower()
+        if "whisper" in lowered:
+            normalized = "whisper"
+        elif "qwen3-" in lowered and "tts" not in lowered:
+            normalized = "qwen_llm"
+        elif "customvoice" in lowered or "custom-voice" in lowered:
+            normalized = "qwen_custom_voice"
+        elif "qwen" in lowered and "tts" in lowered:
+            normalized = "qwen"
+        elif "kokoro" in lowered:
+            normalized = "kokoro"
+        elif "tada" in lowered:
+            normalized = "tada"
+        elif "chatterbox-turbo" in lowered:
+            normalized = "chatterbox_turbo"
+        elif "chatterbox" in lowered:
+            normalized = "chatterbox"
+        elif "luxtts" in lowered:
+            normalized = "luxtts"
+        else:
+            normalized = ""
+
+    if normalized == "whisper":
+        category = "stt"
+    elif normalized == "qwen_llm":
+        category = "llm"
+    elif normalized:
+        category = "tts"
+    else:
+        category = "unknown"
+    return normalized, category
+
+
+def _hf_repo_cache_names(model_name: str, repo_id: str) -> list[str]:
+    names: list[str] = []
+    if repo_id and "/" in repo_id:
+        org, repo = repo_id.split("/", 1)
+        names.append(f"models--{org}--{repo}")
+
+    lowered = model_name.lower()
+    if lowered.startswith("whisper-"):
+        size = lowered.removeprefix("whisper-")
+        names.append(f"models--Systran--faster-whisper-{size}")
+    return names
+
+
+def _voicebox_cached(
+    model_name: str,
+    repo_id: str,
+    roots: list[dict[str, Any]],
+) -> bool:
+    candidates = _hf_repo_cache_names(model_name, repo_id)
+    if not candidates:
+        return False
+    for root in roots:
+        if not root.get("exists"):
+            continue
+        base = Path(str(root.get("path", "")))
+        for candidate in candidates:
+            if (base / candidate).is_dir():
+                return True
+    return False
+
+
 def detect_voicebox(
     host: str = "",
     *,
@@ -340,9 +511,14 @@ def detect_voicebox(
         "model_count": 0,
         "downloaded_count": 0,
         "loaded_count": 0,
+        "available_count": 0,
         "downloaded_models": [],
         "loaded_models": [],
+        "available_models": [],
+        "state_inconsistencies": [],
         "storage_roots": _voicebox_storage_roots(),
+        "listeners": _detect_port_listeners(17493),
+        "exposed_all_interfaces": False,
         "openapi_url": f"{base}/openapi.json",
         "docs_url": f"{base}/docs",
         "error": "",
@@ -371,15 +547,32 @@ def detect_voicebox(
     for item in raw_models if isinstance(raw_models, list) else []:
         if not isinstance(item, dict):
             continue
+        model_name = str(item.get("model_name") or "")
+        repo_id = str(item.get("hf_repo_id") or "")
+        engine, category = _voicebox_engine_and_category(
+            model_name,
+            repo_id,
+            str(item.get("engine") or ""),
+        )
+        cached = _voicebox_cached(
+            model_name,
+            repo_id,
+            result["storage_roots"],
+        )
+        downloaded = bool(item.get("downloaded", False))
+        loaded = bool(item.get("loaded", False))
         record = {
-            "model_name": str(item.get("model_name") or ""),
+            "model_name": model_name,
             "display_name": str(item.get("display_name") or ""),
-            "engine": str(item.get("engine") or ""),
-            "downloaded": bool(item.get("downloaded", False)),
-            "loaded": bool(item.get("loaded", False)),
+            "engine": engine,
+            "category": category,
+            "downloaded": downloaded,
+            "loaded": loaded,
+            "cached": cached,
+            "available": downloaded or loaded or cached,
             "size_mb": item.get("size_mb", 0) or 0,
             "model_size": str(item.get("model_size") or ""),
-            "hf_repo_id": str(item.get("hf_repo_id") or ""),
+            "hf_repo_id": repo_id,
         }
         # Preserve extra public status fields without assuming a fixed schema.
         for key in (
@@ -398,16 +591,39 @@ def detect_voicebox(
         item for item in models if bool(item.get("downloaded"))
     ]
     loaded = [item for item in models if bool(item.get("loaded"))]
+    available = [
+        item for item in models if bool(item.get("available"))
+    ]
+    inconsistencies = [
+        {
+            "model_name": item["model_name"],
+            "downloaded": item["downloaded"],
+            "loaded": item["loaded"],
+            "cached": item["cached"],
+        }
+        for item in models
+        if item["loaded"] and not item["downloaded"]
+    ]
+    listeners = result.get("listeners", [])
+    result["exposed_all_interfaces"] = any(
+        str(item.get("LocalAddress", "")) in {"0.0.0.0", "::"}
+        for item in listeners
+    )
     result["models"] = models
     result["model_count"] = len(models)
     result["downloaded_count"] = len(downloaded)
     result["loaded_count"] = len(loaded)
+    result["available_count"] = len(available)
     result["downloaded_models"] = [
         item["model_name"] for item in downloaded if item["model_name"]
     ]
     result["loaded_models"] = [
         item["model_name"] for item in loaded if item["model_name"]
     ]
+    result["available_models"] = [
+        item["model_name"] for item in available if item["model_name"]
+    ]
+    result["state_inconsistencies"] = inconsistencies
     return result
 
 
@@ -711,7 +927,10 @@ def detect_wampserver() -> dict[str, Any]:
         "components": [item.to_dict() for item in components],
         "active_versions": active_versions,
         "virtual_hosts": virtual_hosts[:500],
-        "wordpress_sites": sorted(wordpress_sites, key=str.lower),
+        "wordpress_sites": sorted(
+            {path.lower(): path for path in wordpress_sites}.values(),
+            key=str.lower,
+        ),
         "hosts_entries": _windows_hosts_entries(),
         "services": services,
         "ports": {
@@ -762,13 +981,14 @@ def analyze_machine_inventory(
     if voicebox.get("reachable"):
         downloaded = int(voicebox.get("downloaded_count", 0) or 0)
         loaded = int(voicebox.get("loaded_count", 0) or 0)
+        available = int(voicebox.get("available_count", 0) or 0)
         recommendations.append(
             {
                 "priority": "low",
                 "kind": "voicebox-local-service",
                 "title": (
-                    f"Voicebox detected with {downloaded} downloaded "
-                    f"model(s), {loaded} loaded"
+                    f"Voicebox detected with {available} available "
+                    f"model(s), {downloaded} downloaded, {loaded} loaded"
                 ),
                 "recommendation": (
                     "Keep Voicebox bound to loopback for local use. Its "
@@ -778,6 +998,20 @@ def analyze_machine_inventory(
                 ),
             }
         )
+        if voicebox.get("exposed_all_interfaces"):
+            recommendations.append(
+                {
+                    "priority": "high",
+                    "kind": "voicebox-network-exposure",
+                    "title": "Voicebox is listening on all network interfaces",
+                    "recommendation": (
+                        "Prefer a localhost-only bind when possible, or verify "
+                        "Windows Firewall blocks untrusted networks. The local "
+                        "Voicebox API can load models and generate/transcribe "
+                        "audio, so it should not be broadly exposed."
+                    ),
+                }
+            )
 
     if ollama.get("reachable") and ollama.get("shared_digest_groups"):
         recommendations.append(
@@ -826,6 +1060,7 @@ def scan_machine_inventory(
     wamp = detect_wampserver()
     runtime_managers = detect_runtime_managers()
     package_caches = detect_package_caches()
+    hardware = detect_hardware()
     return MachineInventory(
         schema_version=1,
         generated_at=datetime.now(timezone.utc).isoformat(),
@@ -838,6 +1073,7 @@ def scan_machine_inventory(
         wampserver=wamp,
         runtime_managers=runtime_managers,
         package_caches=package_caches,
+        hardware=hardware,
         recommendations=analyze_machine_inventory(
             tools,
             ollama,
@@ -869,6 +1105,7 @@ __all__ = [
     "ToolInstallation",
     "WampComponent",
     "analyze_machine_inventory",
+    "detect_hardware",
     "detect_ollama",
     "detect_voicebox",
     "detect_package_caches",
