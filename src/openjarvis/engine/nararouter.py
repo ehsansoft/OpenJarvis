@@ -64,10 +64,24 @@ class NaraRouterEngine(_OpenAICompatibleEngine):
         return bool(self._api_key)
 
     def health(self) -> bool:
-        """Return false without credentials, otherwise probe the model roster."""
+        """Return false without credentials, otherwise probe the model roster.
+
+        Nara's live roster can take longer than the generic 2-second local
+        engine health timeout. Free-model discovery already proved this
+        endpoint can be healthy on slower responses, so use a bounded 10-second
+        provider-specific probe to avoid false Doctor warnings.
+        """
         if not self.has_credentials:
             return False
-        return super().health()
+        try:
+            response = self._client.get(
+                f"{self._api_prefix}/models",
+                timeout=10.0,
+            )
+            return response.status_code == 200
+        except Exception as exc:
+            logger.debug("NaraRouter health probe failed: %s", exc)
+            return False
 
     def list_models(self) -> list[str]:
         """List usable account models, free-only by default."""
