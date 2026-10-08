@@ -13,8 +13,8 @@ host = "https://router.bynara.id"
 free_only = true
 
 [intelligence]
-default_model = "qwen3:4b"
-model_code = "qwen3:4b"
+default_model = ""
+model_code = "free/code"
 
 [agent]
 default_agent = "orchestrator"
