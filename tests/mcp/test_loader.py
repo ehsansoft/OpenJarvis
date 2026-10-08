@@ -101,6 +101,30 @@ class TestLoaderTokenPlumbing:
             token="ha-llat-secret",
         )
 
+    def test_custom_headers_passed_to_streamable_http(
+        self, _mock_mcp_stack
+    ):
+        from openjarvis.mcp.loader import load_mcp_tools_from_config
+
+        cfg = _make_mcp_cfg(
+            enabled=True,
+            servers=[
+                {
+                    "name": "voicebox",
+                    "url": "http://127.0.0.1:17493/mcp",
+                    "headers": {
+                        "X-Voicebox-Client-Id": "openjarvis",
+                    },
+                }
+            ],
+        )
+        load_mcp_tools_from_config(cfg)
+        _mock_mcp_stack["http"].assert_called_once_with(
+            url="http://127.0.0.1:17493/mcp",
+            token=None,
+            headers={"X-Voicebox-Client-Id": "openjarvis"},
+        )
+
     def test_no_token_passes_none(self, _mock_mcp_stack):
         """Missing token in cfg → token=None (not 'undefined' or KeyError)."""
         from openjarvis.mcp.loader import load_mcp_tools_from_config
