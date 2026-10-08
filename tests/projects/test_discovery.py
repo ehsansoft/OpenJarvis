@@ -51,6 +51,35 @@ def test_discovers_mixed_projects_and_prunes_dependencies(tmp_path: Path) -> Non
     assert "TypeScript" in by_name["cvi"].languages
 
 
+def test_nested_monorepo_packages_are_not_counted_as_projects(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "platform"
+    root.mkdir()
+    (root / "package.json").write_text(
+        '{"name":"platform","workspaces":["apps/*","packages/*"]}',
+        encoding="utf-8",
+    )
+    app = root / "apps" / "admin"
+    app.mkdir(parents=True)
+    (app / "package.json").write_text('{"name":"admin"}', encoding="utf-8")
+
+    nested_repo = root / "vendor-tool"
+    nested_repo.mkdir()
+    _make_git_repo(nested_repo)
+    (nested_repo / "package.json").write_text(
+        '{"name":"vendor-tool"}',
+        encoding="utf-8",
+    )
+
+    records = discover_projects(tmp_path, max_depth=5)
+    paths = {Path(item.path).name for item in records}
+
+    assert "platform" in paths
+    assert "admin" not in paths
+    assert "vendor-tool" in paths
+
+
 def test_registry_round_trip(tmp_path: Path) -> None:
     project = tmp_path / "python-tool"
     project.mkdir()
