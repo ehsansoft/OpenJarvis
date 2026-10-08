@@ -516,6 +516,8 @@ def detect_voicebox(
         "loaded_models": [],
         "available_models": [],
         "state_inconsistencies": [],
+        "profiles": [],
+        "profile_count": 0,
         "storage_roots": _voicebox_storage_roots(),
         "listeners": _detect_port_listeners(17493),
         "exposed_all_interfaces": False,
@@ -624,6 +626,22 @@ def detect_voicebox(
         item["model_name"] for item in available if item["model_name"]
     ]
     result["state_inconsistencies"] = inconsistencies
+
+    try:
+        profiles_payload = _http_json(
+            f"{base}/profiles",
+            timeout=timeout,
+        )
+        if isinstance(profiles_payload, list):
+            result["profiles"] = [
+                item for item in profiles_payload if isinstance(item, dict)
+            ][:500]
+            result["profile_count"] = len(result["profiles"])
+    except (URLError, OSError, ValueError, json.JSONDecodeError):
+        # Profiles are optional for model discovery and older builds can
+        # expose a different profile surface. Keep the model scan healthy.
+        pass
+
     return result
 
 
