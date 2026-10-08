@@ -34,6 +34,8 @@ class MachineInventoryTool(BaseTool):
                             "tools",
                             "ollama",
                             "wampserver",
+                            "runtime_managers",
+                            "package_caches",
                             "recommendations",
                         ],
                     }
@@ -72,6 +74,10 @@ class MachineInventoryTool(BaseTool):
             payload = data.get("ollama", {})
         elif section == "wampserver":
             payload = data.get("wampserver", {})
+        elif section == "runtime_managers":
+            payload = data.get("runtime_managers", {})
+        elif section == "package_caches":
+            payload = data.get("package_caches", [])
         elif section == "recommendations":
             payload = data.get("recommendations", [])
         else:
@@ -85,6 +91,8 @@ class MachineInventoryTool(BaseTool):
                 "wampserver_detected": data.get("wampserver", {}).get(
                     "detected", False
                 ),
+                "runtime_managers": sorted(data.get("runtime_managers", {})),
+                "package_caches": len(data.get("package_caches", [])),
             }
 
         return ToolResult(
