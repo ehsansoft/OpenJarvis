@@ -18,6 +18,8 @@ from openjarvis.projects.inventory import (
 from openjarvis.projects.machine_inventory import (
     MachineInventory,
     detect_ollama,
+    detect_package_caches,
+    detect_runtime_managers,
     detect_toolchain,
     detect_wampserver,
     scan_machine_inventory,
@@ -43,6 +45,8 @@ __all__ = [
     "write_inventory",
     "MachineInventory",
     "detect_ollama",
+    "detect_package_caches",
+    "detect_runtime_managers",
     "detect_toolchain",
     "detect_wampserver",
     "scan_machine_inventory",
