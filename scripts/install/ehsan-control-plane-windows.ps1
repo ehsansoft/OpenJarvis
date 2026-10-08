@@ -10,7 +10,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$InstallerVersion = "0.1.0-alpha.4"
+$InstallerVersion = "0.1.0-alpha.4.1"
 
 function Refresh-Path {
     $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
