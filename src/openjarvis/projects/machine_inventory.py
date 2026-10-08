@@ -964,6 +964,7 @@ def analyze_machine_inventory(
     ollama: dict[str, Any],
     voicebox: dict[str, Any],
     wamp: dict[str, Any],
+    hardware: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     recommendations: list[dict[str, str]] = []
     by_name = {item.name: item for item in tools}
@@ -1045,6 +1046,47 @@ def analyze_machine_inventory(
             }
         )
 
+    for disk in (hardware or {}).get("disks", []):
+        try:
+            size = int(disk.get("Size") or 0)
+            free = int(disk.get("FreeSpace") or 0)
+        except (TypeError, ValueError):
+            continue
+        if size <= 0:
+            continue
+        ratio = free / size
+        drive = str(disk.get("DeviceID") or "?")
+        if ratio < 0.08:
+            recommendations.append(
+                {
+                    "priority": "high",
+                    "kind": "disk-pressure",
+                    "title": (
+                        f"{drive} has only {free / (1024**3):.1f} GiB free "
+                        f"({ratio * 100:.1f}%)"
+                    ),
+                    "recommendation": (
+                        "Prioritize reviewed cleanup and move large archives or "
+                        "model caches only after dependency checks. Keep at least "
+                        "10-15% free space for Windows, package managers and builds."
+                    ),
+                }
+            )
+        elif ratio < 0.15:
+            recommendations.append(
+                {
+                    "priority": "medium",
+                    "kind": "disk-pressure",
+                    "title": (
+                        f"{drive} free space is {free / (1024**3):.1f} GiB "
+                        f"({ratio * 100:.1f}%)"
+                    ),
+                    "recommendation": (
+                        "Plan cleanup before large model downloads or build jobs."
+                    ),
+                }
+            )
+
     if wamp.get("detected"):
         kinds: dict[str, int] = {}
         for item in wamp.get("components", []):
@@ -1097,6 +1139,7 @@ def scan_machine_inventory(
             ollama,
             voicebox,
             wamp,
+            hardware,
         ),
         errors=[],
     )
