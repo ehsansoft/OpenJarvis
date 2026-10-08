@@ -76,6 +76,12 @@ compute_type = "int8"
 enabled = true
 servers = '[{"name":"voicebox","url":"http://127.0.0.1:17493/mcp","headers":{"X-Voicebox-Client-Id":"openjarvis"}}]'
 
+[security]
+profile = "personal"
+
+[analytics]
+enabled = false
+
 [server]
 host = "127.0.0.1"
 port = 8000
