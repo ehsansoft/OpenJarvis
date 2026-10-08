@@ -82,7 +82,7 @@ compute_type = "int8"
 
 [tools.mcp]
 enabled = true
-servers = '[{"name":"voicebox","url":"http://127.0.0.1:17493/mcp","headers":{"X-Voicebox-Client-Id":"openjarvis"}}]'
+servers = '[{"name":"voicebox","url":"http://127.0.0.1:17493/mcp/","headers":{"X-Voicebox-Client-Id":"openjarvis"}}]'
 
 [security]
 profile = "personal"
