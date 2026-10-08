@@ -29,14 +29,23 @@ function Run-Capture(
     $path = Join-Path $runDir "$Name.txt"
     Write-Host ""
     Write-Host "=== $Name ===" -ForegroundColor Cyan
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $writer = New-Object System.IO.StreamWriter($path, $false, $utf8NoBom)
     Push-Location $InstallRoot
     try {
-        & $UvExe run jarvis @JarvisArgs 2>&1 | Tee-Object -FilePath $path
+        & $UvExe run jarvis @JarvisArgs 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            Write-Host $line
+            $writer.WriteLine($line)
+        }
         $code = $LASTEXITCODE
     } catch {
-        $_ | Out-String | Tee-Object -FilePath $path -Append | Out-Host
+        $line = $_.ToString()
+        Write-Host $line -ForegroundColor Red
+        $writer.WriteLine($line)
         $code = 1
     } finally {
+        $writer.Dispose()
         Pop-Location
     }
     return $code
@@ -58,6 +67,25 @@ if (Test-Path $registry) {
     Get-ChildItem $registry -Filter "*.json" -File -ErrorAction SilentlyContinue | ForEach-Object {
         Copy-Item $_.FullName (Join-Path $runDir $_.Name) -Force
     }
+}
+
+$configDiag = Join-Path $runDir "07-config-diagnostics.txt"
+$configPath = Join-Path $StateRoot "config.toml"
+if (Test-Path $configPath) {
+    $bytes = [System.IO.File]::ReadAllBytes($configPath)
+    $hasBom = (
+        $bytes.Length -ge 3 -and
+        $bytes[0] -eq 0xEF -and
+        $bytes[1] -eq 0xBB -and
+        $bytes[2] -eq 0xBF
+    )
+    $sha = (Get-FileHash $configPath -Algorithm SHA256).Hash
+    @(
+        "Path: $configPath",
+        "Bytes: $($bytes.Length)",
+        "UTF8 BOM: $hasBom",
+        "SHA256: $sha"
+    ) | Set-Content $configDiag -Encoding ASCII
 }
 
 $systemPath = Join-Path $runDir "08-system-summary.txt"
