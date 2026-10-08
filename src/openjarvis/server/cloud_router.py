@@ -40,6 +40,11 @@ _LOCAL_HF_ORGS = (
     "lmstudio-community/",
 )
 
+# OpenJarvis virtual model aliases contain a slash but are resolved by the
+# local MultiEngine/FreePoolEngine, not by OpenRouter. Keep this check ahead
+# of the generic "provider/model" OpenRouter fallback below.
+_LOCAL_VIRTUAL_PREFIXES = ("free/",)
+
 
 def _load_keys() -> dict[str, str]:
     """Read available cloud keys every call so live updates are picked up."""
@@ -81,6 +86,8 @@ def get_provider(model: str) -> str | None:
         return "atlascloud"
     if any(model.startswith(org) for org in _LOCAL_HF_ORGS):
         return None  # local model, never route to cloud
+    if any(model.startswith(prefix) for prefix in _LOCAL_VIRTUAL_PREFIXES):
+        return None  # OpenJarvis virtual alias, resolved by its engine
     if "/" in model:  # openrouter format: "meta-llama/llama-3-8b"
         return "openrouter"
     return None

@@ -43,7 +43,8 @@ def test_auto_discovery_priority():
     """Auto mode tries backends in priority order."""
     from openjarvis.speech._discovery import DISCOVERY_ORDER
 
-    assert DISCOVERY_ORDER[0] == "faster-whisper"
+    assert DISCOVERY_ORDER[0] == "voicebox"
+    assert DISCOVERY_ORDER[1] == "faster-whisper"
     assert "openai" in DISCOVERY_ORDER
     assert "deepgram" in DISCOVERY_ORDER
 
@@ -54,9 +55,9 @@ def test_auto_discovery_skips_unhealthy_backend() -> None:
 
     config = JarvisConfig()
     config.speech.backend = "auto"
-    unhealthy = MagicMock(backend_id="faster-whisper")
+    unhealthy = MagicMock(backend_id="voicebox")
     unhealthy.health.return_value = False
-    healthy = MagicMock(backend_id="openai")
+    healthy = MagicMock(backend_id="faster-whisper")
     healthy.health.return_value = True
 
     with patch(
@@ -67,8 +68,8 @@ def test_auto_discovery_skips_unhealthy_backend() -> None:
 
     assert result is healthy
     assert create.call_args_list == [
+        call("voicebox", config),
         call("faster-whisper", config),
-        call("openai", config),
     ]
 
 
@@ -77,9 +78,9 @@ def test_auto_discovery_continues_when_health_check_raises() -> None:
 
     config = JarvisConfig()
     config.speech.backend = "auto"
-    broken = MagicMock(backend_id="faster-whisper")
-    broken.health.side_effect = RuntimeError("model cannot load")
-    healthy = MagicMock(backend_id="openai")
+    broken = MagicMock(backend_id="voicebox")
+    broken.health.side_effect = RuntimeError("service unavailable")
+    healthy = MagicMock(backend_id="faster-whisper")
     healthy.health.return_value = True
 
     with patch(

@@ -124,6 +124,7 @@ if not _DATA_BOUNDARY_BOOTSTRAP:
     from openjarvis.cli.optimize_cmd import optimize_group
     from openjarvis.cli.pearl_cmd import pearl
     from openjarvis.cli.quickstart_cmd import quickstart
+    from openjarvis.cli.projects_cmd import projects
     from openjarvis.cli.registry_cmd import registry
     from openjarvis.cli.scheduler_cmd import scheduler
     from openjarvis.cli.self_update_cmd import self_update
@@ -161,6 +162,7 @@ if not _DATA_BOUNDARY_BOOTSTRAP:
     cli.add_command(eval_group, "eval")
     cli.add_command(host, "host")
     cli.add_command(quickstart, "quickstart")
+    cli.add_command(projects, "projects")
     cli.add_command(optimize_group, "optimize")
     cli.add_command(feedback_group, "feedback")
     cli.add_command(compose, "compose")
