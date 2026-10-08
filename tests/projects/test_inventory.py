@@ -31,6 +31,26 @@ def test_inventory_finds_projects_without_reading_contents(tmp_path: Path) -> No
     )
 
 
+def test_inventory_suppresses_cache_and_nested_project_false_positives(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / ".cvi-cache" / "one"
+    cache.mkdir(parents=True)
+    (cache / "package.json").write_text("{}", encoding="utf-8")
+
+    root = tmp_path / "Projects" / "platform"
+    child = root / "apps" / "admin"
+    child.mkdir(parents=True)
+    (root / "package.json").write_text("{}", encoding="utf-8")
+    (child / "package.json").write_text("{}", encoding="utf-8")
+
+    result = scan_drive_inventory(tmp_path, max_files=1000)
+
+    assert str(cache) not in result.project_roots
+    assert str(root) in result.project_roots
+    assert str(child) not in result.project_roots
+
+
 def test_inventory_marks_truncation(tmp_path: Path) -> None:
     for index in range(5):
         (tmp_path / f"{index}.txt").write_text("x", encoding="utf-8")
