@@ -137,14 +137,29 @@ class Finalizer:
             "models_ok": False,
         }
 
+        root_ok, root_payload = self._http_get_json(
+            "http://127.0.0.1:8000/router/v1",
+            timeout=2,
+        )
         ok, payload = self._http_get_json(
             "http://127.0.0.1:8000/router/v1/models",
+            timeout=2,
+        )
+        health_ok, _health_payload = self._http_get_json(
+            "http://127.0.0.1:8000/health",
             timeout=2,
         )
         process: subprocess.Popen[str] | None = None
         log_handle = None
 
-        if not ok:
+        if health_ok and ok and not root_ok:
+            raise RuntimeError(
+                "An older OpenJarvis server is already running on port 8000. "
+                "Stop it with Ctrl+C, then rerun finalization so the updated "
+                "/router/v1 discovery endpoint can be verified."
+            )
+
+        if not ok or not root_ok:
             log_path = self.run_dir / "12-server-process.txt"
             log_handle = log_path.open("w", encoding="utf-8")
             process = subprocess.Popen(
@@ -170,14 +185,20 @@ class Finalizer:
             while time.monotonic() < deadline:
                 if process.poll() is not None:
                     break
+                root_ok, root_payload = self._http_get_json(
+                    "http://127.0.0.1:8000/router/v1",
+                    timeout=2,
+                )
                 ok, payload = self._http_get_json(
                     "http://127.0.0.1:8000/router/v1/models",
                     timeout=2,
                 )
-                if ok:
+                if ok and root_ok:
                     break
                 time.sleep(1.0)
 
+        report["router_root_ok"] = root_ok
+        report["router_root_response"] = root_payload
         report["models_ok"] = ok
         report["models_response"] = payload
         if isinstance(payload, dict):
@@ -206,15 +227,16 @@ class Finalizer:
         self.results.append(
             {
                 "name": name,
-                "returncode": 0 if ok else 1,
+                "returncode": 0 if (ok and root_ok) else 1,
                 "seconds": 0,
                 "required": True,
             }
         )
         print(f"\n=== {name} ===")
-        if not ok:
+        if not ok or not root_ok:
             raise RuntimeError(
-                "OpenJarvis server did not expose /router/v1/models. "
+                "OpenJarvis server did not expose the complete editor API "
+                "(/router/v1 and /router/v1/models). "
                 f"See {self.run_dir}"
             )
         print("Editor gateway reachable.")
@@ -467,8 +489,23 @@ def main() -> int:
             json.dumps(failure, indent=2),
             encoding="utf-8",
         )
+        failure_zip = (
+            finalizer.support_root
+            / f"openjarvis-finalize-alpha4.3-failed-{_stamp()}.zip"
+        )
+        with zipfile.ZipFile(
+            failure_zip,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as archive:
+            for path in sorted(finalizer.run_dir.rglob("*")):
+                if path.is_file():
+                    archive.write(
+                        path,
+                        arcname=path.relative_to(finalizer.run_dir),
+                    )
         print(f"\nFINALIZE FAILED: {exc}", file=sys.stderr)
-        print(f"Evidence: {finalizer.run_dir}", file=sys.stderr)
+        print(f"Evidence: {failure_zip}", file=sys.stderr)
         return 1
 
     print("\nOpenJarvis finalization complete.")
