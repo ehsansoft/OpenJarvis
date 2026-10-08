@@ -43,6 +43,16 @@ except ImportError:
     pass
 
 try:
+    import openjarvis.tools.machine_inventory  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.hygiene_report  # noqa: F401
+except ImportError:
+    pass
+
+try:
     import openjarvis.tools.web_search  # noqa: F401
 except ImportError:
     pass
