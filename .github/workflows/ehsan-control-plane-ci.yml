@@ -52,6 +52,11 @@ jobs:
             tests/cli/test_projects_cmd.py `
             tests/cli/test_projects_windows_task.py `
             tests/core/test_control_plane_config.py `
+            tests/core/test_ehsan_control_plane_upgrade.py `
+            tests/speech/test_voicebox_stt.py `
+            tests/speech/test_discovery.py `
+            tests/mcp/test_transport.py `
+            tests/mcp/test_loader.py `
             tests/core/test_preset_configs.py -v
 
       - name: Package Windows test installer
@@ -68,13 +73,15 @@ jobs:
           Copy-Item scripts\install\Voicebox-Probe.ps1 dist\ehsan-installer\
           Copy-Item scripts\install\Voicebox-Probe.cmd dist\ehsan-installer\
           Copy-Item scripts\install\README-EHSAN-WINDOWS.md dist\ehsan-installer\
+          Copy-Item scripts\install\Upgrade-Ehsan-Config.py dist\ehsan-installer\
+          Copy-Item scripts\install\Check-Voicebox-MCP.py dist\ehsan-installer\
           Copy-Item scripts\install\installer-manifest.json dist\ehsan-installer\
-          Compress-Archive -Path dist\ehsan-installer\* -DestinationPath dist\OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.3.zip
+          Compress-Archive -Path dist\ehsan-installer\* -DestinationPath dist\OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.zip
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.3
-          path: dist/OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.3.zip
+          name: OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4
+          path: dist/OpenJarvis-Ehsan-Control-Plane-0.1.0-alpha.4.zip
           if-no-files-found: error
           retention-days: 14
