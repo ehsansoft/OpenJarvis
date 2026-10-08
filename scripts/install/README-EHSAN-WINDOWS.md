@@ -1,6 +1,6 @@
 # Ehsan OpenJarvis Windows Test Installer
 
-Version: 0.1.0-alpha.4.2
+Version: 0.1.0-alpha.4.3
 
 This installer targets the development branch:
 
@@ -129,3 +129,21 @@ It also:
 - uses a longer NaraRouter health probe to avoid false Doctor warnings
 
 Run `Repair-Ehsan-OpenJarvis.cmd`; it now invokes the deterministic finalizer.
+
+## Alpha.4.3 final setup hotfix
+
+Alpha.4.3 fixes the two Windows test failures observed during real-machine
+finalization:
+
+- the config migration test now expects Voicebox's canonical FastMCP endpoint
+  at `http://127.0.0.1:17493/mcp/`
+- built-in engines are restored lazily after registry isolation/reset, so
+  `nararouter` can always be constructed by discovery
+
+It also keeps rate limiting active with the pure-Python token bucket when the
+optional `openjarvis_rust` extension is not built, adds a useful JSON document
+at `GET /router/v1`, verifies that document during finalization, and always
+creates a ZIP even when final verification fails.
+
+If an older OpenJarvis server is already running on port 8000, stop it with
+Ctrl+C before finalization so the new server code can be verified.
