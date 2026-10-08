@@ -58,10 +58,23 @@ try {
             "D:\\AI-Control\\registry\\drive-inventory.json",
             (Join-Path $StateRoot "registry\drive-inventory.json").Replace("\", "\\")
         )
+        $Text = $Text.Replace(
+            "D:\\AI-Control\\registry\\machine-inventory.json",
+            (Join-Path $StateRoot "registry\machine-inventory.json").Replace("\", "\\")
+        )
+        $Text = $Text.Replace(
+            "D:\\AI-Control\\registry\\cleanup-report.json",
+            (Join-Path $StateRoot "registry\cleanup-report.json").Replace("\", "\\")
+        )
+        $Text = $Text.Replace(
+            "D:\\AI-Control\\registry\\duplicate-report.json",
+            (Join-Path $StateRoot "registry\duplicate-report.json").Replace("\", "\\")
+        )
         Set-Content -Path $ConfigPath -Value $Text -Encoding utf8
     }
 
     uv run jarvis projects scan $ProjectsRoot --max-depth 5
+    uv run jarvis projects machine-scan
     uv run jarvis model free
 
     if ($InitialInventory) {
