@@ -35,6 +35,8 @@ enabled = [
   "calculator",
   "project_registry",
   "drive_inventory",
+  "machine_inventory",
+  "hygiene_report",
 ]
 
 [tools.storage]
@@ -45,8 +47,13 @@ root = "D:\\Projects"
 registry_path = "D:\\AI-Control\\registry\\projects.json"
 inventory_root = "D:\\"
 inventory_path = "D:\\AI-Control\\registry\\drive-inventory.json"
+machine_inventory_path = "D:\\AI-Control\\registry\\machine-inventory.json"
+cleanup_report_path = "D:\\AI-Control\\registry\\cleanup-report.json"
+duplicate_report_path = "D:\\AI-Control\\registry\\duplicate-report.json"
 max_depth = 5
 inventory_max_files = 2000000
+duplicate_min_size_mb = 1
+cleanup_min_age_days = 30
 
 [traces]
 enabled = true
