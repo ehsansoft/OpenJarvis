@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenJarvis optional project manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "migration_version": {
+      "const": 0,
+      "type": "integer"
+    },
+    "project_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "role": {
+      "enum": [
+        "active",
+        "client",
+        "personal",
+        "reference",
+        "archive",
+        "template",
+        "generated",
+        "experimental",
+        "unknown"
+      ]
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "project_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "frameworks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "package_managers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "related_sites": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "related_repositories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "local_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "HTTP(S), without credentials, query or fragment; runtime validator enforces this."
+    },
+    "production_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "HTTP(S), without credentials, query or fragment; runtime validator enforces this."
+    },
+    "staging_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "HTTP(S), without credentials, query or fragment; runtime validator enforces this."
+    },
+    "runtime_requirements": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "commands": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "Argv declarations only. Preview never executes them."
+    },
+    "knowledge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "privacy": {
+          "enum": [
+            "public",
+            "project-public",
+            "private-project"
+          ]
+        },
+        "include": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Patterns must stay relative. Mandatory policy exclusions cannot be weakened."
+    }
+  }
+}

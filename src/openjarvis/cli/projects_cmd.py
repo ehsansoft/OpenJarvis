@@ -26,6 +26,7 @@ from openjarvis.projects import (
     write_machine_inventory,
     write_registry,
 )
+from openjarvis.projects.review import PROJECT_ROLES, manifest_preview, registry_preview
 
 _SCAN_TASK_NAME = "OpenJarvis Drive Inventory"
 
@@ -92,6 +93,65 @@ def _write_windows_scan_script(
 @click.group()
 def projects() -> None:
     """Manage the local project and drive knowledge fabric."""
+
+
+@projects.command("review")
+@click.option(
+    "--registry", "registry_path", type=click.Path(path_type=Path, dir_okay=False)
+)
+@click.option("--role", type=click.Choice(PROJECT_ROLES))
+@click.option("--offset", type=click.IntRange(min=0), default=0)
+@click.option("--limit", type=click.IntRange(min=1, max=100), default=20)
+@click.option("--expected-sha256", help="Reject a changed scanner snapshot.")
+def review_projects(
+    registry_path: Path | None,
+    role: str | None,
+    offset: int,
+    limit: int,
+    expected_sha256: str | None,
+) -> None:
+    """Preview project review batches as JSON; never confirm or migrate records."""
+    if registry_path is None:
+        registry_path = Path(load_config().projects.registry_path).expanduser()
+    try:
+        report = registry_preview(
+            registry_path,
+            role=role,
+            offset=offset,
+            limit=limit,
+            expected_sha256=expected_sha256,
+        )
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(report, indent=2, ensure_ascii=False))
+
+
+@projects.command("audit")
+@click.option(
+    "--registry", "registry_path", type=click.Path(path_type=Path, dir_okay=False)
+)
+def audit_projects(registry_path: Path | None) -> None:
+    """Audit scanner version, role counts and identity collisions without writes."""
+    if registry_path is None:
+        registry_path = Path(load_config().projects.registry_path).expanduser()
+    try:
+        report = registry_preview(registry_path, limit=1)
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    for key in ("reviews", "offset", "limit", "next_offset", "matching_count"):
+        report.pop(key)
+    click.echo(json.dumps(report, indent=2, ensure_ascii=False))
+
+
+@projects.command("manifest-preview")
+@click.argument("root", type=click.Path(path_type=Path, exists=True, file_okay=False))
+def preview_project_manifest(root: Path) -> None:
+    """Validate the optional project manifest without writes or command execution."""
+    try:
+        report = manifest_preview(root)
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(report, indent=2, ensure_ascii=False))
 
 
 @projects.command("scan")

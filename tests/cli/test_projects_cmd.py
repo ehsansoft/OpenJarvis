@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest import mock
 
@@ -44,3 +45,53 @@ def test_list_requires_existing_registry(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "Project registry not found" in result.output
+
+
+def test_read_only_review_and_stale_hash(tmp_path: Path) -> None:
+    registry = tmp_path / "projects.json"
+    raw = b'{"schema_version":2,"projects":[]}'
+    registry.write_bytes(raw)
+    runner = CliRunner()
+    result = runner.invoke(projects, ["review", "--registry", str(registry)])
+    assert result.exit_code == 0
+    report = json.loads(result.output)
+    assert report["mode"] == "read-only-preview"
+    assert report["total"] == 0
+    registry.write_bytes(raw + b" ")
+    result = runner.invoke(
+        projects,
+        [
+            "review",
+            "--registry",
+            str(registry),
+            "--expected-sha256",
+            report["snapshot_sha256"],
+        ],
+    )
+    assert result.exit_code != 0
+    assert "snapshot changed" in result.output
+    assert registry.read_bytes() == raw + b" "
+
+    result = runner.invoke(projects, ["audit", "--registry", str(registry)])
+    assert result.exit_code == 0
+    audit = json.loads(result.output)
+    assert audit["scope"] == "scanner-proposals-only"
+    assert "reviews" not in audit
+    assert registry.read_bytes() == raw + b" "
+
+
+def test_manifest_cli_no_write_and_invalid_fields(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(projects, ["manifest-preview", str(tmp_path)])
+    assert result.exit_code == 0
+    assert json.loads(result.output)["commands_executed"] is False
+    assert list(tmp_path.iterdir()) == []
+    folder = tmp_path / ".openjarvis"
+    folder.mkdir()
+    manifest = folder / "project.toml"
+    raw = 'schema_version=1\nunknown="secret"\n'
+    manifest.write_text(raw)
+    result = runner.invoke(projects, ["manifest-preview", str(tmp_path)])
+    assert result.exit_code != 0
+    assert "Unknown manifest fields: unknown" in result.output
+    assert manifest.read_text() == raw
