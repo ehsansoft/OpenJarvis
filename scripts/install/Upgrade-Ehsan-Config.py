@@ -96,7 +96,7 @@ def upgrade(path: Path) -> list[str]:
         "voicebox_status",
         "hygiene_report",
     ]
-    if isinstance(enabled, list):
+    if enabled is not None and hasattr(enabled, "append"):
         for name in required_tools:
             if name not in enabled:
                 enabled.append(name)
