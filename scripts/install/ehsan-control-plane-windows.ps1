@@ -124,7 +124,10 @@ try {
     Write-Host "Install root: $InstallRoot"
     Write-Host "State root:   $StateRoot"
     Write-Host "Projects:     $ProjectsRoot"
-    if (Test-Path "C:\\wamp64") {\n        Write-Host "WampServer:   C:\\wamp64 (detected)"\n    }\n    Write-Host ""
+    if (Test-Path "C:\\wamp64") {
+        Write-Host "WampServer:   C:\\wamp64 (detected)"
+    }
+    Write-Host ""
     Write-Host "To enable rotating NaraRouter free models securely:"
     Write-Host "  uv run jarvis model nara-key"
     Write-Host "Then run: uv run jarvis model free"
