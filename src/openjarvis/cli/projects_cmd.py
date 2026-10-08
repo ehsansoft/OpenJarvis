@@ -285,9 +285,15 @@ def voicebox_scan(host: str | None, as_json: bool) -> None:
 
     click.echo(
         f"Models: {result.get('model_count', 0)} registered, "
+        f"{result.get('available_count', 0)} available, "
         f"{result.get('downloaded_count', 0)} downloaded, "
         f"{result.get('loaded_count', 0)} loaded"
     )
+    click.echo(f"Voice profiles: {result.get('profile_count', 0)}")
+    if result.get("exposed_all_interfaces"):
+        click.echo(
+            "WARNING: Voicebox is listening on all network interfaces."
+        )
     for model in result.get("models", []):
         flags = []
         if model.get("downloaded"):
