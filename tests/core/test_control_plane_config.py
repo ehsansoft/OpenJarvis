@@ -36,6 +36,7 @@ def test_control_plane_nested_config_loads(tmp_path: Path) -> None:
     assert config.projects.duplicate_report_path == r"D:\State\duplicates.json"
     assert config.projects.duplicate_min_size_mb == 4
     assert config.projects.cleanup_min_age_days == 45
+    assert config.projects.voicebox_host == "http://127.0.0.1:17493"
 
 
 def test_control_plane_config_keys_are_settable() -> None:
@@ -48,3 +49,4 @@ def test_control_plane_config_keys_are_settable() -> None:
     assert validate_config_key("projects.duplicate_report_path") is str
     assert validate_config_key("projects.duplicate_min_size_mb") is int
     assert validate_config_key("projects.cleanup_min_age_days") is int
+    assert validate_config_key("projects.voicebox_host") is str
