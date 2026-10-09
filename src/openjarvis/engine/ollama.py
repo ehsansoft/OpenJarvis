@@ -120,12 +120,14 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
         host: str | None = None,
         *,
         timeout: float = 1800.0,
+        num_ctx: int | None = None,
     ) -> None:
         # Priority: explicit host (from config.toml) > OLLAMA_HOST env var > default
         if host is None:
             env_host = os.environ.get("OLLAMA_HOST")
             host = env_host or self._DEFAULT_HOST
         self._host = host.rstrip("/")
+        self._num_ctx = num_ctx
         # Used by the shared async streaming plumbing (AsyncHTTPEngineMixin) so a
         # wedged token read is bounded by ``timeout`` instead of hanging the
         # single event loop for the httpx default.
@@ -134,7 +136,12 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
         # the async stream path with no real Ollama server. ``None`` in production so
         # httpx uses its default networking.
         self._async_transport: httpx.AsyncBaseTransport | None = None
-        self._client = httpx.Client(base_url=self._host, timeout=timeout)
+        from openjarvis.core.http import trust_environment_for_url
+
+        self._trust_env = trust_environment_for_url(self._host)
+        self._client = httpx.Client(
+            base_url=self._host, timeout=timeout, trust_env=self._trust_env
+        )
         # Last stream usage — captured from Ollama's final chunk
         self._last_stream_usage: Dict[str, int] = {}
 
@@ -165,7 +172,7 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
             "options": _ollama_request_options(
                 temperature=temperature,
                 max_tokens=max_tokens,
-                kwargs=kwargs,
+                kwargs={"num_ctx": self._num_ctx, **kwargs},
             ),
         }
         # Disable extended thinking by default (Qwen3.5 etc.).
@@ -287,7 +294,7 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
             "options": _ollama_request_options(
                 temperature=temperature,
                 max_tokens=max_tokens,
-                kwargs=kwargs,
+                kwargs={"num_ctx": self._num_ctx, **kwargs},
             ),
         }
         # Mirror generate()'s default: disable extended thinking unless the
@@ -386,7 +393,7 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
             "options": _ollama_request_options(
                 temperature=temperature,
                 max_tokens=max_tokens,
-                kwargs=kwargs,
+                kwargs={"num_ctx": self._num_ctx, **kwargs},
             ),
         }
         if "think" not in kwargs:
@@ -519,6 +526,27 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
             raise EngineConnectionError(
                 f"Ollama not reachable at {self._host}"
             ) from exc
+
+    def list_model_metadata(self) -> List[Dict[str, Any]]:
+        """Inspect installed model capabilities without downloading weights."""
+        response = self._client.get("/api/tags")
+        response.raise_for_status()
+        result = []
+        for item in response.json().get("models", []):
+            model_id = item.get("name", item.get("model", ""))
+            detail = dict(item)
+            if "capabilities" not in detail:
+                show = self._client.post("/api/show", json={"model": model_id})
+                show.raise_for_status()
+                detail.update(show.json())
+            detail["id"] = model_id
+            info = detail.get("model_info", {})
+            detail["context_length"] = next(
+                (v for k, v in info.items() if k.endswith(".context_length")),
+                detail.get("context_length", 0),
+            )
+            result.append(detail)
+        return result
 
     def list_models(self) -> List[str]:
         try:

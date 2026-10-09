@@ -90,8 +90,11 @@ class OllamaEmbedder(Embedder):
     ) -> None:
         import httpx  # local import to keep module light if unused
 
+        from openjarvis.core.http import trust_environment_for_url
+
         self._model = model
         self._base_url = base_url.rstrip("/")
+        self._trust_env = trust_environment_for_url(self._base_url)
         self._batch_size = max(1, batch_size)
         self._max_parallel = max(1, max_parallel)
         self._timeout_s = timeout_s
@@ -104,6 +107,7 @@ class OllamaEmbedder(Embedder):
             f"{self._base_url}/api/embed",
             json={"model": self._model, "input": texts},
             timeout=self._timeout_s,
+            trust_env=self._trust_env,
         )
         resp.raise_for_status()
         data = resp.json()

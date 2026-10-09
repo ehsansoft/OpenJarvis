@@ -237,7 +237,15 @@ class NIMEngine(InferenceEngine):
                 f"NIM engine not reachable at {self._host}"
             ) from exc
 
+    def _hosted_endpoint_requires_key(self) -> bool:
+        return (
+            self._host.rstrip("/") == self._default_host.rstrip("/")
+            and not self._api_key
+        )
+
     def list_models(self) -> List[str]:
+        if self._hosted_endpoint_requires_key():
+            return []
         try:
             resp = self._client.get(
                 f"{self._api_prefix}/models",
@@ -255,6 +263,10 @@ class NIMEngine(InferenceEngine):
         return [m["id"] for m in data.get("data", [])]
 
     def health(self) -> bool:
+        # Do not probe NVIDIA's hosted public endpoint without credentials.
+        # Self-hosted/private NIM deployments may legitimately omit a key.
+        if self._hosted_endpoint_requires_key():
+            return False
         try:
             resp = self._client.get(
                 f"{self._api_prefix}/health/ready",

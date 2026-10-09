@@ -228,6 +228,39 @@ class TestCapabilityPolicy:
         assert "code:execute" in result.content
         assert tool._sessions == {}
 
+    @pytest.mark.parametrize(
+        "module_name,class_name",
+        [
+            ("drive_inventory", "DriveInventoryTool"),
+            ("hygiene_report", "HygieneReportTool"),
+            ("machine_inventory", "MachineInventoryTool"),
+            ("project_registry", "ProjectRegistryTool"),
+            ("voicebox_status", "VoiceboxStatusTool"),
+        ],
+    )
+    def test_control_plane_tools_require_read_grants(self, module_name, class_name):
+        import importlib
+        from unittest.mock import MagicMock
+
+        tool = getattr(
+            importlib.import_module(f"openjarvis.tools.{module_name}"), class_name
+        )()
+        tool.execute = MagicMock(
+            return_value=ToolResult(tool_name=tool.spec.name, content="fixture")
+        )
+        policy = CapabilityPolicy(default_deny=True)
+        executor = ToolExecutor([tool], capability_policy=policy, agent_id="reader")
+        call = ToolCall(id="inventory", name=tool.spec.name, arguments="{}")
+        assert not executor.execute(call).success
+        tool.execute.assert_not_called()
+        policy.grant("reader", Capability.FILE_READ)
+        if module_name == "voicebox_status":
+            assert not executor.execute(call).success
+            tool.execute.assert_not_called()
+            policy.grant("reader", Capability.NETWORK_FETCH)
+        assert executor.execute(call).success
+        tool.execute.assert_called_once()
+
     def test_uninventoried_future_builtin_fails_closed(self):
         class FutureBuiltin(BaseTool):
             @property

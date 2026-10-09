@@ -135,6 +135,9 @@ def chat(
         sys.exit(1)
 
     engine_name, engine = resolved
+    from openjarvis.engine.privacy import personal_engine
+
+    engine = personal_engine(config, engine, engine_name)
     from openjarvis.cli._model_switch import (
         interactive_pick_model,
         resolve_chat_cli_model,

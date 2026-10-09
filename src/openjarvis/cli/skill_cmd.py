@@ -252,6 +252,53 @@ def _sync_resolver(resolver, console: Console) -> None:
         console.print(warning, style="yellow", markup=False)
 
 
+@skill.command("audit")
+@click.argument("source", type=click.Choice(["hermes"]))
+@click.option(
+    "--category",
+    type=click.Choice(["research", "coding", "productivity"]),
+    default=None,
+)
+@click.option("--cache-path", type=click.Path(path_type=Path), default=None)
+def audit(source, category, cache_path):
+    """Inspect cached Hermes skills without syncing, importing, or executing."""
+    import json
+
+    from openjarvis.skills.importer import SkillImporter
+    from openjarvis.skills.parser import SkillParser
+    from openjarvis.skills.sources.hermes import HermesResolver
+    from openjarvis.skills.tool_translator import ToolTranslator
+
+    resolver = HermesResolver(cache_path)
+    importer = SkillImporter(SkillParser(), ToolTranslator())
+    skills = resolver.list_skills()
+    if category:
+        skills = [entry for entry in skills if entry.category == category]
+    reports = []
+    for entry in skills:
+        try:
+            reports.append(importer.audit_skill(entry))
+        except Exception as exc:
+            reports.append(
+                {
+                    "name": entry.name,
+                    "category": entry.category,
+                    "error": str(exc),
+                    "imported": False,
+                }
+            )
+    click.echo(
+        json.dumps(
+            {
+                "source": source,
+                "cache_present": resolver.cache_dir().exists(),
+                "skills": reports,
+            },
+            indent=2,
+        )
+    )
+
+
 @skill.command("install")
 @click.argument("query")
 @click.option(

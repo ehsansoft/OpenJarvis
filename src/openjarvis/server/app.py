@@ -174,6 +174,8 @@ def create_app(
     api_key: str = "",
     webhook_config: dict | None = None,
     cors_origins: list[str] | None = None,
+    runtime_system=None,
+    router_engine=None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -193,6 +195,15 @@ def create_app(
         Optional JarvisConfig for other settings.
     """
     original_engine = engine
+    if config is not None and config.intelligence.private_routing:
+        from openjarvis.engine.privacy import personal_engine
+
+        router_engine = router_engine or engine
+        engine = personal_engine(config, engine, engine_name)
+        if agent is not None:
+            agent._engine = engine
+        if runtime_system is not None:
+            runtime_system.engine = engine
     security_enabled = config is not None and getattr(
         getattr(config, "security", None), "enabled", False
     )
@@ -281,6 +292,7 @@ def create_app(
     app.state.agent = agent
     app.state.bus = bus
     app.state.engine_name = engine_name
+    app.state.router_engine = router_engine or engine
     app.state.agent_name = agent_name or (
         getattr(agent, "agent_id", None) if agent else None
     )
@@ -293,6 +305,11 @@ def create_app(
     app.state.speech_backend = speech_backend
     app.state.agent_manager = agent_manager
     app.state.agent_scheduler = agent_scheduler
+    app.state.runtime_system = runtime_system
+    app.state.task_scheduler = getattr(runtime_system, "scheduler", None)
+    from openjarvis.server.scheduler_routes import router as scheduler_router
+
+    app.include_router(scheduler_router)
     # Security primitives for the managed-agent HTTP/SSE routes
     # (agent_manager_routes.py). Previously never passed here at all, so
     # every managed agent reached over the network ran with no RBAC gate,
@@ -312,6 +329,34 @@ def create_app(
     # AuthMiddleware never sees WS upgrade requests). Empty = auth disabled.
     app.state.api_key = api_key
 
+    @app.on_event("startup")
+    async def _start_managed_runtime() -> None:
+        app.state._server_owner = None
+        if runtime_system is not None and config is not None:
+            from openjarvis.core.paths import get_config_dir
+            from openjarvis.scheduler.ownership import SchedulerOwnership
+
+            owner = SchedulerOwnership(get_config_dir() / f"serve-{config.server.port}")
+            owner.acquire()
+            app.state._server_owner = owner
+        try:
+            if app.state.task_scheduler is not None:
+                app.state.task_scheduler._ownership.acquire()
+            if channel_bridge is not None:
+                channel_bridge.connect()
+            if app.state.task_scheduler is not None:
+                app.state.task_scheduler.start()
+            if agent_scheduler is not None:
+                agent_scheduler.start()
+        except BaseException:
+            if channel_bridge is not None:
+                channel_bridge.disconnect()
+            if app.state.task_scheduler is not None:
+                app.state.task_scheduler.stop()
+            if app.state._server_owner is not None:
+                app.state._server_owner.release()
+            raise
+
     @app.on_event("shutdown")
     async def _shutdown_managed_runtime() -> None:
         # Quiesce every producer before touching the shared MCP pool. Route
@@ -321,6 +366,13 @@ def create_app(
         with app.state._managed_worker_lock:
             app.state._managed_runtime_stopping = True
             managed_workers = list(app.state._managed_workers)
+        task_scheduler = app.state.task_scheduler
+        task_drained = True
+        if task_scheduler is not None:
+            task_scheduler.request_stop()
+            task_drained = task_scheduler.wait_stopped(
+                timeout=_MANAGED_SHUTDOWN_GRACE_SECONDS
+            )
 
         # Stop external listener threads before draining ticks or closing the
         # shared MCP pool. Channel callbacks are wired to that same pool by
@@ -386,7 +438,17 @@ def create_app(
                 scheduler_drained = False
                 logger.debug("Agent scheduler drain failed", exc_info=True)
         _join_workers(timeout=_MANAGED_SHUTDOWN_DRAIN_SECONDS)
+        if task_scheduler is not None:
+            task_drained = task_scheduler.wait_stopped(
+                timeout=_MANAGED_SHUTDOWN_DRAIN_SECONDS
+            )
         alive = [thread.name for thread in managed_workers if thread.is_alive()]
+        channel_wait = getattr(channel_bridge, "wait_stopped", None)
+        channels_drained = (
+            bool(channel_wait(timeout=_MANAGED_SHUTDOWN_DRAIN_SECONDS))
+            if callable(channel_wait)
+            else True
+        )
         if alive:
             logger.warning("Managed workers did not stop during shutdown: %s", alive)
 
@@ -394,8 +456,17 @@ def create_app(
         # to this app process. Close it only after every tracked consumer has
         # been drained; injected/borrowed backends remain the caller's concern.
         owned_memory_backend = None
-        runtime_drained = scheduler_drained and not alive
+        runtime_drained = (
+            scheduler_drained and task_drained and channels_drained and not alive
+        )
         if runtime_drained:
+            server_owner = getattr(app.state, "_server_owner", None)
+            if server_owner is not None:
+                server_owner.release()
+            if task_scheduler is not None:
+                runtime_system.scheduler_store.close()
+            if runtime_system is not None and runtime_system.session_store is not None:
+                runtime_system.session_store.close()
             with app.state._memory_backend_lock:
                 if app.state._owns_memory_backend:
                     owned_memory_backend = app.state.memory_backend

@@ -127,6 +127,13 @@ def _resolve_server_model(
 @click.option("-e", "--engine", "engine_key", default=None, help="Engine backend.")
 @click.option("-m", "--model", "model_name", default=None, help="Default model.")
 @click.option(
+    "--scheduler",
+    "enable_scheduler",
+    is_flag=True,
+    help="Enable the owned task scheduler.",
+)
+@click.option("--scheduler-poll-interval", default=None, type=click.IntRange(min=1))
+@click.option(
     "-a",
     "--agent",
     "agent_name",
@@ -141,6 +148,8 @@ def serve(
     engine_key: str | None,
     model_name: str | None,
     agent_name: str | None,
+    enable_scheduler: bool = False,
+    scheduler_poll_interval: int | None = None,
 ) -> None:
     """Start the OpenAI-compatible API server."""
     print_banner(quiet=(ctx.obj or {}).get("quiet", False))
@@ -164,10 +173,22 @@ def serve(
     inject_credentials()
 
     config = load_config()
+    if enable_scheduler:
+        config.scheduler.enabled = True
+    if scheduler_poll_interval is not None:
+        config.scheduler.poll_interval = scheduler_poll_interval
 
     # Resolve host/port from CLI args or config
     bind_host = host or config.server.host
     bind_port = port if port is not None else config.server.port
+    import socket
+
+    with socket.socket() as probe:
+        probe.settimeout(1)
+        if probe.connect_ex((bind_host, bind_port)) == 0:
+            raise click.ClickException(
+                "A service already owns this endpoint; restart its owner first"
+            )
 
     # Set up engine
     register_builtin_models()
@@ -270,6 +291,25 @@ def serve(
     if cloud_engine is not None:
         multi_entries.append(("cloud", cloud_engine))
 
+    # Stable zero-API-cost aliases for editor/CLI clients. The free pool is
+    # built from the same discovered engines, so local Ollama/etc. and the
+    # currently entitled NaraRouter free roster can fail over without clients
+    # chasing rotating provider model IDs.
+    try:
+        from openjarvis.intelligence.free_pool import FreePoolEngine
+
+        free_pool = FreePoolEngine(all_engines)
+        if free_pool.health():
+            multi_entries.append(("free-pool", free_pool))
+            all_models["free-pool"] = free_pool.list_models()
+            merge_discovered_models("free-pool", all_models["free-pool"])
+            console.print(
+                "  Free pool: [cyan]enabled[/cyan] "
+                f"({len(free_pool.candidates)} zero-API-cost models)"
+            )
+    except Exception as exc:
+        logger.debug("Free model pool initialization failed: %s", exc)
+
     if len(multi_entries) > 1:
         from openjarvis.engine.multi import MultiEngine
 
@@ -303,6 +343,13 @@ def serve(
             "For MLX: start the MLX OpenAI-compatible server on the configured host."
         )
         sys.exit(1)
+
+    public_engine = engine
+    from openjarvis.engine.privacy import personal_engine
+
+    engine = personal_engine(config, engine, engine_name)
+    # Preserve security instrumentation on personal local execution too.
+    engine = setup_security(config, engine, bus).engine
 
     # Resolve agent
     agent = None
@@ -442,77 +489,12 @@ def serve(
             sb._bus = bus
             channel_bridge = sb._resolve_channel(config, bus)
             if channel_bridge is not None:
-                channel_bridge.connect()
                 console.print(
                     f"  Channel: [cyan]{config.channel.default_channel}[/cyan]"
                 )
         except Exception as exc:
             console.print(f"[yellow]Channel failed to start: {exc}[/yellow]")
             channel_bridge = None
-
-    # Wire channel messages → agent / engine (per-chat session isolation)
-    if channel_bridge is not None:
-        from openjarvis.system import JarvisSystem
-
-        channel_agent = config.channel.default_agent or agent_key or "simple"
-
-        _channel_tools: list = []
-        if channel_agent:
-            try:
-                import openjarvis.agents
-                from openjarvis.core.registry import AgentRegistry
-
-                if AgentRegistry.contains(channel_agent):
-                    _ch_cls = AgentRegistry.get(channel_agent)
-                    if getattr(_ch_cls, "accepts_tools", False):
-                        import openjarvis.tools
-                        from openjarvis.core.registry import ToolRegistry
-                        from openjarvis.tools._stubs import BaseTool
-
-                        _allowed, _tools_configured = _resolve_allowed_tools(config)
-
-                        for _tname in ToolRegistry.keys():
-                            if _tname not in _allowed:
-                                continue
-                            _tcls = ToolRegistry.get(_tname)
-                            if isinstance(_tcls, type) and issubclass(_tcls, BaseTool):
-                                _channel_tools.append(_tcls())
-                            elif isinstance(_tcls, BaseTool):
-                                _channel_tools.append(_tcls)
-
-                        # Reuse the process-owned MCP pool so channels do not
-                        # open a second transport to every configured server.
-                        _ch_mcp_tools = managed_mcp_tools
-                        if _tools_configured:
-                            _ch_mcp_tools = [
-                                tool
-                                for tool in managed_mcp_tools
-                                if tool.spec.name in _allowed
-                            ]
-                        if _ch_mcp_tools:
-                            _existing = {t.spec.name for t in _channel_tools}
-                            for t in _ch_mcp_tools:
-                                if t.spec.name not in _existing:
-                                    _channel_tools.append(t)
-                                    _existing.add(t.spec.name)
-            except Exception as exc:
-                logger.warning("Channel tools failed to load: %s", exc)
-
-        _wire_system = JarvisSystem(
-            config=config,
-            bus=bus,
-            engine=engine,
-            engine_key=engine_name,
-            model=model_name,
-            agent_name=channel_agent,
-            tools=_channel_tools,
-            mcp_tools=managed_mcp_tools,
-            _mcp_clients=mcp_clients,
-            capability_policy=sec.capability_policy,
-            audit_logger=sec.audit_logger,
-            rate_limiter=sec.rate_limiter,
-        )
-        _wire_system.wire_channel(channel_bridge)
 
     # Set up speech backend
     speech_backend = None
@@ -579,106 +561,83 @@ def serve(
         except Exception as exc:
             logger.debug("Agent manager init failed: %s", exc)
 
-    # Set up agent scheduler for cron/interval agents
+    # One system owns personal execution, channels, and both scheduler APIs.
+    from openjarvis.sessions.session import SessionStore as AgentSessionStore
+    from openjarvis.system import JarvisSystem
+    from openjarvis.tools._stubs import ToolExecutor
+
+    agent_sessions = None
+    if config.sessions.enabled:
+        from pathlib import Path
+
+        agent_sessions = AgentSessionStore(
+            db_path=Path(config.sessions.db_path).expanduser(),
+            max_age_hours=config.sessions.max_age_hours,
+            consolidation_threshold=config.sessions.consolidation_threshold,
+        )
+
+    system = JarvisSystem(
+        config=config,
+        bus=bus,
+        engine=engine,
+        engine_key=engine_name,
+        model=model_name,
+        agent=agent,
+        agent_name=config.channel.default_agent or agent_key or "simple",
+        tools=resolved_tools,
+        mcp_tools=managed_mcp_tools,
+        tool_executor=ToolExecutor(
+            resolved_tools,
+            bus,
+            capability_policy=sec.capability_policy,
+            agent_id=agent_key or "scheduler",
+            rate_limiter=sec.rate_limiter,
+        )
+        if resolved_tools
+        else None,
+        memory_backend=memory_backend,
+        telemetry_store=telem_store,
+        session_store=agent_sessions,
+        capability_policy=sec.capability_policy,
+        audit_logger=sec.audit_logger,
+        rate_limiter=sec.rate_limiter,
+        agent_manager=agent_manager,
+        _mcp_clients=mcp_clients,
+    )
+    if config.scheduler.enabled:
+        from openjarvis.scheduler.scheduler import TaskScheduler
+        from openjarvis.scheduler.store import SchedulerStore
+
+        system.scheduler_store = SchedulerStore(
+            config.scheduler.db_path or str(get_config_dir() / "scheduler.db")
+        )
+        system.scheduler = TaskScheduler(
+            system.scheduler_store,
+            system,
+            bus=bus,
+            poll_interval=config.scheduler.poll_interval,
+        )
+
     agent_scheduler = None
     if agent_manager is not None:
-        try:
-            from openjarvis.agents.executor import AgentExecutor
-            from openjarvis.agents.scheduler import AgentScheduler
+        from openjarvis.agents.executor import AgentExecutor
+        from openjarvis.agents.scheduler import AgentScheduler
 
-            _trace_store = None
-            try:
-                if config.traces.enabled:
-                    from openjarvis.traces.store import TraceStore
-
-                    _trace_store = TraceStore(db_path=config.traces.db_path)
-            except Exception:
-                pass
-
-            executor = AgentExecutor(
-                manager=agent_manager,
-                event_bus=bus,
-                trace_store=_trace_store,
-            )
-            # Reuse the components already built inline above instead of a
-            # second full SystemBuilder.build() — the original double-build
-            # re-discovered the engine, re-instrumented it, re-resolved tools,
-            # re-opened the channel and re-created the agent manager, costing
-            # ~30-40s on top of an already-paid startup (#263). The executor
-            # only reads engine/model/config/memory_backend/tool_executor/
-            # session_store/channel_backend from the system (see
-            # AgentExecutor), all of which are wired here.
-            from openjarvis.sessions.session import SessionStore
-            from openjarvis.system import JarvisSystem
-            from openjarvis.tools._stubs import ToolExecutor
-
-            _sched_session_store = None
-            if config.sessions.enabled:
-                try:
-                    from pathlib import Path as _SchedPath
-
-                    _sched_session_store = SessionStore(
-                        db_path=_SchedPath(config.sessions.db_path).expanduser(),
-                        max_age_hours=config.sessions.max_age_hours,
-                        consolidation_threshold=(
-                            config.sessions.consolidation_threshold
-                        ),
-                    )
-                except Exception as exc:
-                    logger.debug("Scheduler session store init failed: %s", exc)
-
-            _sched_tool_executor = (
-                ToolExecutor(
-                    resolved_tools,
-                    bus,
-                    capability_policy=sec.capability_policy,
-                    agent_id=agent_key or "scheduler",
-                    rate_limiter=sec.rate_limiter,
-                )
-                if resolved_tools
-                else None
-            )
-
-            system = JarvisSystem(
-                config=config,
-                bus=bus,
-                engine=engine,
-                engine_key=engine_name,
-                model=model_name,
-                agent=agent,
-                agent_name=agent_key or "",
-                tools=resolved_tools,
-                mcp_tools=managed_mcp_tools,
-                tool_executor=_sched_tool_executor,
-                memory_backend=memory_backend,
-                telemetry_store=telem_store,
-                trace_store=_trace_store,
-                session_store=_sched_session_store,
-                capability_policy=sec.capability_policy,
-                audit_logger=sec.audit_logger,
-                rate_limiter=sec.rate_limiter,
-                agent_manager=agent_manager,
-                agent_executor=executor,
-                _mcp_clients=mcp_clients,
-            )
-            executor.set_system(system)
-
-            agent_scheduler = AgentScheduler(
-                manager=agent_manager,
-                executor=executor,
-                event_bus=bus,
-            )
-            for ag in agent_manager.list_agents():
-                sched_type = ag.get("config", {}).get("schedule_type", "manual")
-                if sched_type in ("cron", "interval") and ag["status"] not in (
-                    "archived",
-                    "error",
-                ):
-                    agent_scheduler.register_agent(ag["id"])
-            agent_scheduler.start()
-            console.print("  Scheduler: [cyan]active[/cyan]")
-        except Exception as exc:
-            logger.debug("Agent scheduler init failed: %s", exc)
+        executor = AgentExecutor(manager=agent_manager, event_bus=bus)
+        executor.set_system(system)
+        system.agent_executor = executor
+        agent_scheduler = AgentScheduler(
+            manager=agent_manager,
+            executor=executor,
+            event_bus=bus,
+        )
+        system.agent_scheduler = agent_scheduler
+        for ag in agent_manager.list_agents():
+            if ag.get("config", {}).get("schedule_type", "manual") in (
+                "cron",
+                "interval",
+            ) and ag["status"] not in ("archived", "error"):
+                agent_scheduler.register_agent(ag["id"])
 
     # --- Channel Gateway: API key, sessions, ChannelBridge ---
     import os as _os
@@ -735,12 +694,13 @@ def serve(
                 channels=channels,
                 session_store=session_store,
                 bus=bus,
-                system=None,
+                system=system,
                 agent_manager=agent_manager,
             )
         except Exception as exc:
             logger.debug("ChannelBridge init skipped: %s", exc)
 
+    system.channel_backend = channel_bridge
     cors_origins = _resolve_server_cors_origins(config.server.cors_origins)
     app = create_app(
         engine,
@@ -765,6 +725,8 @@ def serve(
         api_key=api_key,
         webhook_config=webhook_config,
         cors_origins=cors_origins,
+        runtime_system=system,
+        router_engine=public_engine,
     )
 
     console.print(

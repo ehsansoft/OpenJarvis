@@ -21,7 +21,9 @@ def store(tmp_path):
 
 @pytest.fixture()
 def scheduler(store):
-    sched = TaskScheduler(store, poll_interval=1)
+    system = MagicMock()
+    system.ask.return_value = {"content": "Executed"}
+    sched = TaskScheduler(store, system=system, poll_interval=1)
     yield sched
     sched.stop()
 
@@ -236,7 +238,8 @@ class TestComputeNextRun:
         task = ScheduledTask(
             id="t", prompt="p", schedule_type="unknown", schedule_value="x"
         )
-        assert scheduler._compute_next_run(task) is None
+        with pytest.raises(ValueError, match="Unknown schedule type"):
+            scheduler._compute_next_run(task)
 
 
 # -- _execute_task -----------------------------------------------------------
@@ -268,8 +271,8 @@ class TestExecuteTask:
 
         logs = store.get_run_logs(task.id)
         assert len(logs) == 1
-        assert logs[0]["success"] == 1
-        assert "dry-run" in logs[0]["result"]
+        assert logs[0]["success"] == 0
+        assert "JarvisSystem" in logs[0]["error"]
 
     def test_execute_with_error(self, store):
         mock_system = MagicMock()
@@ -341,7 +344,9 @@ class TestLifecycle:
         scheduler.stop()
 
     def test_poll_loop_finds_due_tasks(self, store):
-        sched = TaskScheduler(store, poll_interval=1)
+        system = MagicMock()
+        system.ask.return_value = {"content": "Executed"}
+        sched = TaskScheduler(store, system=system, poll_interval=1)
         # Create a task that is already due
         task = sched.create_task("immediate", "once", "2020-01-01T00:00:00+00:00")
         # Manually set next_run to the past

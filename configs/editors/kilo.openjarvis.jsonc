@@ -1,0 +1,70 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "openai-compatible/openjarvis-local-code",
+  "provider": {
+    "openai-compatible": {
+      "options": {
+        "baseURL": "http://127.0.0.1:8000/router/v1"
+      },
+      "models": {
+        "openjarvis-code": {
+          "id": "free/code",
+          "name": "OpenJarvis Free Code",
+          "tool_call": true
+        },
+        "openjarvis-research": {
+          "id": "free/research",
+          "name": "OpenJarvis Free Research"
+        },
+        "openjarvis-fast": {
+          "id": "free/fast",
+          "name": "OpenJarvis Free Fast"
+        },
+        "openjarvis-vision": {
+          "id": "free/vision",
+          "name": "OpenJarvis Free Vision",
+          "attachment": true,
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "openjarvis-local-code": {
+          "id": "local/code",
+          "name": "OpenJarvis Private Code",
+          "tool_call": true
+        },
+        "openjarvis-local-fast": {
+          "id": "local/fast",
+          "name": "OpenJarvis Private Fast",
+          "tool_call": true
+        },
+        "openjarvis-local-research": {
+          "id": "local/research",
+          "name": "OpenJarvis Private Research",
+          "tool_call": true
+        },
+        "openjarvis-local-vision": {
+          "id": "local/vision",
+          "name": "OpenJarvis Private Vision",
+          "tool_call": true,
+          "attachment": true,
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

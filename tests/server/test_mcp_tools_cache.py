@@ -237,6 +237,9 @@ def test_app_shutdown_stops_scheduler_before_closing_shared_mcp_clients() -> Non
     worker_finished = threading.Event()
 
     class _Scheduler:
+        def start(self):
+            events.append("scheduler-start")
+
         def request_stop(self):
             events.append("scheduler-stop")
 
@@ -290,6 +293,7 @@ def test_app_shutdown_stops_scheduler_before_closing_shared_mcp_clients() -> Non
     assert app.state._managed_runtime_stopping is True
     assert app.state._managed_workers == set()
     assert events.index("channel") < events.index("mcp")
+    assert events.index("scheduler-start") < events.index("scheduler-stop")
     assert events.index("scheduler-stop") < events.index("mcp")
     assert events.index("mcp") < events.index("worker-finished")
     assert events.index("worker-finished") < events.index("memory")

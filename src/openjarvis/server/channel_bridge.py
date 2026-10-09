@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -60,6 +61,12 @@ class ChannelBridge:
         self._agent_manager = agent_manager
         self._deep_research_agent = deep_research_agent
         self._notification_timestamps: Dict[str, float] = {}
+        self._routing_lock = threading.RLock()
+        self._callbacks = threading.Condition()
+        self._active_callbacks = 0
+        self._connected = False
+        self._handlers_wired = False
+        self._subscribed = False
         self._subscribe_notifications()
 
     # --------------------------------------------------------------
@@ -67,12 +74,72 @@ class ChannelBridge:
     # --------------------------------------------------------------
 
     def connect(self) -> None:
-        for ch in self._channels.values():
-            ch.connect()
+        with self._routing_lock:
+            if self._connected:
+                return
+            if not self._subscribed:
+                self._subscribe_notifications()
+            if not self._handlers_wired:
+                for ch in self._channels.values():
+                    ch.on_message(self._on_message)
+                self._handlers_wired = True
+            self._connected = True
+            try:
+                for ch in self._channels.values():
+                    ch.connect()
+            except Exception:
+                self.disconnect()
+                raise
+
+    def _on_message(self, message: Any) -> None:
+        with self._callbacks:
+            if not self._connected:
+                return
+            self._active_callbacks += 1
+        try:
+            self._route_message(message)
+        finally:
+            with self._callbacks:
+                self._active_callbacks -= 1
+                self._callbacks.notify_all()
+
+    def wait_stopped(self, timeout: float = 10) -> bool:
+        with self._callbacks:
+            drained = self._callbacks.wait_for(
+                lambda: self._active_callbacks == 0, timeout=timeout
+            )
+        pollers_alive = any(
+            getattr(ch, "_listener_thread", None) is not None
+            and ch._listener_thread.is_alive()
+            for ch in self._channels.values()
+        )
+        return drained and not pollers_alive
+
+    def _route_message(self, message: Any) -> None:
+        # Conversation ids, not sender ids, define native chat sessions.
+        with self._routing_lock:
+            if not self._connected:
+                return
+            destination = message.conversation_id or message.sender
+            reply = self.handle_incoming(
+                destination, message.content, message.channel, message.metadata
+            )
+            if not self._connected:
+                return
+            self._channels[message.channel].send(
+                destination,
+                reply,
+                conversation_id=message.message_id,
+                metadata={"reply_to": message.message_id},
+            )
 
     def disconnect(self) -> None:
+        self._connected = False
         for ch in self._channels.values():
             ch.disconnect()
+        for event_type in _NOTIFICATION_EVENTS:
+            self._bus.unsubscribe(event_type, self._on_notification_event)
+        self._subscribed = False
 
     def list_channels(self) -> List[str]:
         result: List[str] = []
@@ -265,7 +332,7 @@ class ChannelBridge:
                 response_text = f"Research error: {exc}"
         elif self._system is not None:
             try:
-                result = self._system.ask(query)
+                result = self._system.ask(query, context=False)
                 response_text = result.get("content", str(result))
             except Exception:
                 logger.exception("Error in JarvisSystem.ask()")
@@ -317,8 +384,27 @@ class ChannelBridge:
     def _subscribe_notifications(self) -> None:
         for event_type in _NOTIFICATION_EVENTS:
             self._bus.subscribe(event_type, self._on_notification_event)
+        self._subscribed = True
 
     def _on_notification_event(self, event) -> None:  # noqa: ANN001
+        if event.event_type == EventType.SCHEDULER_TASK_END:
+            # Scheduled results are private and must never broadcast to all users.
+            notify = (event.data or {}).get("notify")
+            if not isinstance(notify, dict):
+                return
+            channel = str(notify.get("channel", ""))
+            chat_id = str(notify.get("chat_id", ""))
+            for target in self._session_store.get_notification_targets():
+                if (
+                    target["sender_id"] == chat_id
+                    and target["channel_type"] == channel
+                    and target["preferred_notification_channel"] == channel
+                ):
+                    message = self._format_notification(event)
+                    if message:
+                        self._send_notification(channel, chat_id, message)
+                    break
+            return
         event_key = str(event.event_type)
         now = time.time()
 
@@ -355,7 +441,7 @@ class ChannelBridge:
             return f"Agent '{name}' hit budget limit."
         if event.event_type == EventType.SCHEDULER_TASK_END:
             if data.get("success", True):
-                return f"Scheduled task '{name}' completed."
+                return f"Scheduled task '{name}' completed: {data.get('result', '')}"
             error = data.get("error", "unknown error")
             return f"Scheduled task '{name}' failed: {error}"
         return None

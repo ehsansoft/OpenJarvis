@@ -50,7 +50,10 @@ def get_tts_backend(
 
     seen = attempted if attempted is not None else set()
 
-    for key in dict.fromkeys((preferred, *TTS_BACKEND_ORDER)):
+    order = (
+        ("voicebox",) if preferred == "voicebox" else (preferred, *TTS_BACKEND_ORDER)
+    )
+    for key in dict.fromkeys(order):
         if not key or key in seen:
             continue
         seen.add(key)

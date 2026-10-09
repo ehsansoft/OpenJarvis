@@ -1,0 +1,17 @@
+# Review example only: preview never writes this into a project.
+schema_version = 1
+migration_version = 0
+name = "Example plugin"
+role = "personal"
+project_type = "wordpress-plugin"
+aliases = ["example-plugin"]
+tags = ["wordpress"]
+
+[commands]
+test = ["composer", "test"]
+lint = ["composer", "lint"]
+
+[knowledge]
+privacy = "private-project"
+include = ["README.md", "docs/**", "src/**"]
+exclude = ["node_modules/**", "vendor/**"]

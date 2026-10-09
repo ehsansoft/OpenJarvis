@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Tuple
@@ -13,6 +14,42 @@ from openjarvis.engine._base import InferenceEngine
 logger = logging.getLogger(__name__)
 
 # Map registry keys to config host attribute (None = no host arg)
+_BUILTIN_ENGINE_TARGETS: dict[str, tuple[str, str]] = {
+    "nararouter": ("openjarvis.engine.nararouter", "NaraRouterEngine"),
+    "nim": ("openjarvis.engine.nim", "NIMEngine"),
+    "ollama": ("openjarvis.engine.ollama", "OllamaEngine"),
+    "vllm": ("openjarvis.engine.openai_compat_engines", "VLLMEngine"),
+    "llamacpp": ("openjarvis.engine.openai_compat_engines", "LlamaCppEngine"),
+    "sglang": ("openjarvis.engine.openai_compat_engines", "SGLangEngine"),
+    "mlx": ("openjarvis.engine.openai_compat_engines", "MLXEngine"),
+    "lmstudio": ("openjarvis.engine.openai_compat_engines", "LMStudioEngine"),
+    "exo": ("openjarvis.engine.openai_compat_engines", "ExoEngine"),
+    "nexa": ("openjarvis.engine.openai_compat_engines", "NexaEngine"),
+    "uzu": ("openjarvis.engine.openai_compat_engines", "UzuEngine"),
+    "apple_fm": ("openjarvis.engine.openai_compat_engines", "AppleFmEngine"),
+    "lemonade": ("openjarvis.engine.openai_compat_engines", "LemonadeEngine"),
+}
+
+
+def _ensure_builtin_engine_registered(key: str) -> None:
+    """Restore a known built-in after an explicit registry reset.
+
+    Re-register the existing class object instead of reloading its module.
+    Reloading recreates the class object, which can make isinstance checks
+    fail for callers that imported the original class before the reset.
+    """
+    if EngineRegistry.contains(key):
+        return
+    target = _BUILTIN_ENGINE_TARGETS.get(key)
+    if target is None:
+        return
+    module_name, class_name = target
+    module = importlib.import_module(module_name)
+    engine_cls = getattr(module, class_name, None)
+    if engine_cls is not None:
+        EngineRegistry.register_value(key, engine_cls)
+
+
 _HOST_MAP: Dict[str, str | None] = {
     "ollama": "ollama_host",
     "vllm": "vllm_host",
@@ -25,6 +62,7 @@ _HOST_MAP: Dict[str, str | None] = {
     "uzu": "uzu_host",
     "apple_fm": "apple_fm_host",
     "lemonade": "lemonade_host",
+    "nararouter": "nararouter_host",
     "cloud": None,
     "litellm": None,
     "gemma_cpp": None,
@@ -35,6 +73,7 @@ _HOST_MAP: Dict[str, str | None] = {
 
 def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
     """Instantiate a registered engine with the appropriate config host."""
+    _ensure_builtin_engine_registered(key)
     cls = EngineRegistry.get(key)
 
     # LiteLLM cannot enumerate every model supported by every provider.  Its
@@ -42,6 +81,13 @@ def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
     # model, which must be supplied when discovery constructs the engine.
     if key == "litellm":
         return cls(default_model=config.intelligence.default_model or None)
+
+    if key == "nararouter":
+        cfg = config.engine.nararouter
+        return cls(
+            host=cfg.host or None,
+            free_only=cfg.free_only,
+        )
 
     # gemma_cpp: pass config fields instead of host
     if key == "gemma_cpp":
@@ -54,6 +100,12 @@ def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
         )
 
     # afm: in-process engine, configured by behaviour rather than a host
+    if key == "ollama":
+        return cls(
+            host=config.engine.ollama.host or None,
+            num_ctx=config.engine.ollama.num_ctx or None,
+        )
+
     if key == "afm":
         cfg = config.engine.afm
         return cls(
@@ -194,6 +246,15 @@ def get_engine(
 
     Returns ``(key, engine_instance)`` or ``None`` if no engine is available.
     """
+
+    if model and model.startswith(("free/", "local/")):
+        from openjarvis.intelligence.free_pool import FreePoolEngine
+
+        engines = discover_engines(config)
+        if engine_key:
+            engines = [(key, engine) for key, engine in engines if key == engine_key]
+        pool = FreePoolEngine(engines, allow_remote=not model.startswith("local/"))
+        return ("free-pool", pool) if pool.can_serve(model) else None
 
     def _usable(engine: InferenceEngine) -> bool:
         return engine.health() and (model is None or engine.can_serve(model))

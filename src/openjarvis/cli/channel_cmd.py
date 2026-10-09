@@ -36,9 +36,9 @@ def _get_channel(
 
     kwargs: Dict[str, Any] = {}
     if key == "telegram":
-        tc = config.channel.telegram
-        if tc.bot_token:
-            kwargs["bot_token"] = tc.bot_token
+        from openjarvis.system._channel_kwargs import _telegram
+
+        kwargs.update(_telegram(config.channel.telegram))
     elif key == "discord":
         dc = config.channel.discord
         if dc.bot_token:
