@@ -61,6 +61,8 @@ jobs:
             tests/core/test_voicebox_mcp_check.py `
             tests/core/test_real_user_acceptance.py `
             tests/core/test_acceptance_cmd.py `
+            tests/core/test_capability_catalog.py `
+            tests/core/test_loopback_http.py `
             tests/security/test_capabilities.py `
             tests/cli/test_standalone_security.py `
             tests/operators/test_operators.py `

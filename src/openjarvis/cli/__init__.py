@@ -31,6 +31,8 @@ def _should_skip_update_check(ctx: click.Context, argv: list[str]) -> bool:
     """Return true for commands whose diagnostics should remain local-only."""
     if "--research" in argv:
         return True
+    if ctx.invoked_subcommand == "capabilities":
+        return True
     return ctx.invoked_subcommand == "scan" and "--data-boundaries" in argv
 
 
@@ -102,6 +104,7 @@ if not _DATA_BOUNDARY_BOOTSTRAP:
     from openjarvis.cli.agent_cmd import agent
     from openjarvis.cli.ask import ask
     from openjarvis.cli.bench_cmd import bench
+    from openjarvis.cli.capabilities_cmd import capabilities
     from openjarvis.cli.channel_cmd import channel
     from openjarvis.cli.channels_cmd import channels
     from openjarvis.cli.chat_cmd import chat
@@ -149,6 +152,7 @@ if not _DATA_BOUNDARY_BOOTSTRAP:
     cli.add_command(channels, "channels")
     cli.add_command(scheduler, "scheduler")
     cli.add_command(doctor, "doctor")
+    cli.add_command(capabilities, "capabilities")
     cli.add_command(agent, "agents")
     cli.add_command(workflow, "workflow")
     cli.add_command(skill, "skill")

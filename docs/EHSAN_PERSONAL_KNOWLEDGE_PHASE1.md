@@ -237,6 +237,10 @@ SQLite plus external side effects does not guarantee exactly-once delivery.
 
 ### Capability catalog and Model Lab
 
+Phase 1B's read-only catalog is implemented in
+[EHSAN_CAPABILITY_CATALOG_PHASE1B.md](EHSAN_CAPABILITY_CATALOG_PHASE1B.md).
+The approvals CLI (1C) and Model Lab (1I) remain later phases.
+
 `jarvis capabilities` reports READY/MANUAL_SETUP/DISABLED/BLOCKED/NOT_INSTALLED/
 NOT_APPLICABLE, reason, observed_at, evidence source and exact next action.
 Presence, configured enablement and human acceptance are separate fields.

@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, List, Optional
 
 import requests
 
+from openjarvis.core.http import trust_environment_for_url
+
 # numpy is imported lazily inside the functions that use it (not at module
 # load). The CLI imports this module eagerly via the deep-research command
 # chain, so a module-level `import numpy` makes a broken/slow numpy on Windows
@@ -58,6 +60,13 @@ class OllamaEmbedder:
         if host is None:
             host = os.environ.get("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST
         self._host = host.rstrip("/")
+        # Empty proxy URLs explicitly override requests' environment merge,
+        # including ALL_PROXY. Remote/LAN hosts keep their normal proxy policy.
+        self._proxies = (
+            None
+            if trust_environment_for_url(self._host)
+            else {"http": "", "https": "", "all": ""}
+        )
         self._timeout = timeout
         self._dim: Optional[int] = None
 
@@ -78,7 +87,9 @@ class OllamaEmbedder:
     def is_available(self) -> bool:
         """Return True iff the daemon answers and the model is installed."""
         try:
-            resp = requests.get(f"{self._host}/api/tags", timeout=2.0)
+            resp = requests.get(
+                f"{self._host}/api/tags", timeout=2.0, proxies=self._proxies
+            )
             resp.raise_for_status()
         except requests.RequestException:
             return False
@@ -104,6 +115,7 @@ class OllamaEmbedder:
                 f"{self._host}/api/embeddings",
                 json={"model": self._model, "prompt": text},
                 timeout=self._timeout,
+                proxies=self._proxies,
             )
             resp.raise_for_status()
             payload = resp.json()

@@ -136,7 +136,12 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
         # the async stream path with no real Ollama server. ``None`` in production so
         # httpx uses its default networking.
         self._async_transport: httpx.AsyncBaseTransport | None = None
-        self._client = httpx.Client(base_url=self._host, timeout=timeout)
+        from openjarvis.core.http import trust_environment_for_url
+
+        self._trust_env = trust_environment_for_url(self._host)
+        self._client = httpx.Client(
+            base_url=self._host, timeout=timeout, trust_env=self._trust_env
+        )
         # Last stream usage — captured from Ollama's final chunk
         self._last_stream_usage: Dict[str, int] = {}
 

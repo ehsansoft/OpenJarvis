@@ -7,6 +7,7 @@ from typing import List, Optional
 
 import httpx
 
+from openjarvis.core.http import trust_environment_for_url
 from openjarvis.core.registry import SpeechRegistry
 from openjarvis.speech._stubs import Segment, SpeechBackend, TranscriptionResult
 
@@ -49,6 +50,7 @@ class VoiceboxSpeechBackend(SpeechBackend):
         self._client = client or httpx.Client(
             base_url=self._host,
             timeout=httpx.Timeout(timeout, connect=5.0),
+            trust_env=trust_environment_for_url(self._host),
         )
         self._last_error: Optional[str] = None
         self._require_loaded = require_loaded

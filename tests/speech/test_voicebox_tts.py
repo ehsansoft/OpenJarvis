@@ -65,3 +65,34 @@ def test_unloaded_voicebox_never_loads_or_downloads():
         VoiceboxTTSBackend(client=client).synthesize("Acceptance")
     assert calls == ["/models/status"]
     client.close()
+
+
+def test_generation_polls_json_history_instead_of_sse_status():
+    """Voicebox 0.5 returns SSE at /generate/{id}/status, not JSON."""
+    client, _ = fixture_client()
+    original = client._transport.handler
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/generate":
+            return httpx.Response(
+                200, json={"id": "generation", "status": "generating"}
+            )
+        if request.url.path == "/generate/generation/status":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text='data: {"status": "completed"}\n\n',
+            )
+        if request.url.path == "/history/generation":
+            return httpx.Response(200, json={"id": "generation", "status": "completed"})
+        return original(request)
+
+    client._transport.handler = handler
+    result = VoiceboxTTSBackend(client=client).synthesize("Acceptance")
+    assert result.audio.startswith(b"RIFF")
+    assert "/history/generation" in calls
+    assert "/generate/generation/status" not in calls
+    assert calls.count("/generate") == 1
+    client.close()

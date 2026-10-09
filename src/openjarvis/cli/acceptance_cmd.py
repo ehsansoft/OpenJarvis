@@ -174,7 +174,7 @@ def acceptance(
         checks.append({"name": "regression", "status": "NOT_RUN"})
     if live:
         try:
-            _live_checks(checks, run_dir, speech_fixture)
+            report["context_sha256"] = _live_checks(checks, run_dir, speech_fixture)
         except Exception as exc:
             checks.append(
                 {"name": "live_setup", "status": "FAIL", "error": redact(str(exc))}
@@ -213,16 +213,20 @@ def acceptance(
 
 def _live_checks(
     checks: list, run_dir: Path, speech_fixture: Path | None = None
-) -> None:
-    import httpx
+) -> str:
 
     from openjarvis.connectors.embeddings import OllamaEmbedder
+    from openjarvis.core.capability_catalog import (
+        MetadataProbe,
+        catalog_context_sha256,
+    )
     from openjarvis.core.config import load_config
     from openjarvis.core.types import Message, Role
     from openjarvis.engine.ollama import OllamaEngine
     from openjarvis.intelligence.free_pool import FreePoolEngine
 
     config = load_config()
+    metadata_probe = MetadataProbe(timeout=5)
 
     def record(name, action):
         try:
@@ -232,7 +236,7 @@ def _live_checks(
             checks.append({"name": name, "status": "FAIL", "error": redact(str(exc))})
 
     def models():
-        data = httpx.get(config.engine.ollama.host + "/api/tags", timeout=10).json()
+        data = metadata_probe(config.engine.ollama.host, "/api/tags")
         return [{"name": m["name"], "size": m.get("size")} for m in data["models"]]
 
     record("installed_ollama_models", models)
@@ -444,15 +448,9 @@ def _live_checks(
     record("deep_research_real", deep_research)
     record(
         "voicebox_service",
-        lambda: (
-            httpx.get(config.projects.voicebox_host + "/health", timeout=5)
-            .raise_for_status()
-            .json()
-        ),
+        lambda: metadata_probe(config.projects.voicebox_host, "/health"),
     )
-    voice_status = httpx.get(
-        config.projects.voicebox_host + "/models/status", timeout=5
-    ).json()
+    voice_status = metadata_probe(config.projects.voicebox_host, "/models/status")
     if speech_fixture is not None:
 
         def transcribe_fixture():
@@ -491,7 +489,9 @@ def _live_checks(
 
             tts = VoiceboxTTSBackend(host=config.projects.voicebox_host)
             result = tts.synthesize(
-                "This is a local acceptance test.", output_format="wav"
+                "This is a local acceptance test.",
+                output_format="wav",
+                voice_id=config.speech.voice_id,
             )
             (run_dir / "voicebox-acceptance.wav").write_bytes(result.audio)
             stt = VoiceboxSpeechBackend(
@@ -508,3 +508,17 @@ def _live_checks(
 
         record("voicebox_tts_stt_roundtrip", voice)
     local.close()
+    tags = metadata_probe(config.engine.ollama.host, "/api/tags")
+    metadata = []
+    for model in tags.get("models", [])[:12]:
+        info = metadata_probe(
+            config.engine.ollama.host, "/api/show", {"name": model["name"]}
+        )
+        metadata.append(
+            {
+                "id": model["name"],
+                "digest": model.get("digest", ""),
+                "capabilities": info.get("capabilities", []),
+            }
+        )
+    return catalog_context_sha256(config, metadata)

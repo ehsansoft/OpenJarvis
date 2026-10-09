@@ -275,6 +275,8 @@ class StreamableHTTPTransport(MCPTransport):
     ) -> None:
         import httpx
 
+        from openjarvis.core.http import trust_environment_for_url
+
         self._url = url
         self._token = token
         self._extra_headers = dict(headers or {})
@@ -285,6 +287,7 @@ class StreamableHTTPTransport(MCPTransport):
             # canonicalization instead of treating the 307 as a protocol
             # failure.
             follow_redirects=True,
+            trust_env=trust_environment_for_url(url),
             timeout=httpx.Timeout(
                 connect=connect_timeout,
                 read=request_timeout,

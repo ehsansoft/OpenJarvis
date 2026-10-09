@@ -49,6 +49,24 @@ def test_evidence_zip_excludes_test_state_and_redacts_tokens(tmp_path, monkeypat
         assert b"PRIVATE_CHAT" not in payload
 
 
+def test_no_start_services_guard_reports_failure_without_spawning(
+    tmp_path, monkeypatch
+):
+    module = _module()
+    finalizer = module.Finalizer(
+        tmp_path, tmp_path / "state", tmp_path / "projects", start_services=False
+    )
+    monkeypatch.setattr(
+        finalizer, "_http_get_json", lambda *args, **kwargs: (False, {})
+    )
+    spawned = MagicMock(side_effect=AssertionError("Service must not start"))
+    monkeypatch.setattr(module.subprocess, "Popen", spawned)
+    with pytest.raises(RuntimeError):
+        finalizer.server_smoke()
+    spawned.assert_not_called()
+    assert finalizer.results[-1]["returncode"] == 1
+
+
 def test_timeout_retains_byte_output_and_produces_failure_evidence(
     tmp_path, monkeypatch
 ):
@@ -65,6 +83,27 @@ def test_timeout_retains_byte_output_and_produces_failure_evidence(
         "partial\nTIMEOUT" in (finalizer.run_dir / "02-targeted-tests.txt").read_text()
     )
     assert finalizer.results[0]["returncode"] == 124
+
+
+def test_verification_can_skip_installing_or_enabling_inventory_task(
+    tmp_path, monkeypatch
+):
+    module = _module()
+    finalizer = module.Finalizer(
+        tmp_path,
+        tmp_path / "state",
+        tmp_path / "projects",
+        start_services=False,
+        install_scan_task=False,
+    )
+    calls = []
+    (finalizer.state / "config.toml").write_text("", encoding="utf-8")
+    monkeypatch.setattr(finalizer, "run", lambda name, *a, **k: calls.append(name))
+    monkeypatch.setattr(finalizer, "_voicebox_reachable", lambda: False)
+    monkeypatch.setattr(finalizer, "server_smoke", lambda: None)
+    finalizer.finalize()
+    assert "09-scheduled-scan-install" not in calls
+    assert "10-scheduled-scan-status" in calls
 
 
 def test_finalizer_avoids_legacy_pytest_directories(tmp_path: Path) -> None:

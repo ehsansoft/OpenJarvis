@@ -9,6 +9,7 @@ includes the credential store.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -22,12 +23,27 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 VERSION = "0.1.0-alpha.4.3"
 
 
 def _stamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def _open_url(request, *, timeout):
+    """Workstation proxies must not intercept local service verification."""
+    url = request.full_url if isinstance(request, urllib.request.Request) else request
+    host = urlsplit(url).hostname or ""
+    try:
+        loopback = host.lower() == "localhost" or ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback = host.lower() == "localhost"
+    if loopback:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        return opener.open(request, timeout=timeout)
+    return urllib.request.urlopen(request, timeout=timeout)  # noqa: S310
 
 
 def write_evidence_zip(run_dir: Path, destination: Path) -> None:
@@ -60,16 +76,23 @@ class Finalizer:
         projects: Path,
         *,
         run_cleanup: bool = False,
+        start_services: bool = True,
+        install_scan_task: bool = True,
     ) -> None:
         self.repo = repo
         self.state = state
         self.projects = projects
         self.run_cleanup = run_cleanup
+        self.start_services = start_services
+        self.install_scan_task = install_scan_task
         self.support_root = state / "support"
         self.run_dir = self.support_root / f"finalize-alpha4.3-{_stamp()}"
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.env = os.environ.copy()
         self.env["OPENJARVIS_HOME"] = str(state)
+        local_bypass = self.env.get("no_proxy", self.env.get("NO_PROXY", ""))
+        local_bypass = ",".join(filter(None, (local_bypass, "localhost,127.0.0.1,::1")))
+        self.env["NO_PROXY"] = self.env["no_proxy"] = local_bypass
         self.results: list[dict[str, Any]] = []
         self.uv = shutil.which("uv") or "uv"
         self.git = shutil.which("git") or "git"
@@ -127,7 +150,7 @@ class Finalizer:
 
     def _voicebox_reachable(self) -> bool:
         try:
-            with urllib.request.urlopen(  # noqa: S310
+            with _open_url(
                 "http://127.0.0.1:17493/health",
                 timeout=3,
             ) as response:
@@ -147,7 +170,7 @@ class Finalizer:
                 url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            with _open_url(request, timeout=timeout) as response:
                 return True, json.loads(response.read().decode("utf-8"))
         except Exception as exc:
             return False, {"error": f"{type(exc).__name__}: {exc}"}
@@ -157,6 +180,7 @@ class Finalizer:
         report: dict[str, Any] = {
             "base": "http://127.0.0.1:8000",
             "started_by_finalizer": False,
+            "services_start_allowed": self.start_services,
             "models_ok": False,
         }
 
@@ -186,7 +210,7 @@ class Finalizer:
 
         # Do not start a competing server when an existing one responds but
         # its model discovery fails. Report that failure on the existing API.
-        if not (root_ok or health_ok):
+        if not (root_ok or health_ok) and self.start_services:
             log_path = self.run_dir / "12-server-process.txt"
             log_handle = log_path.open("w", encoding="utf-8")
             process = subprocess.Popen(
@@ -321,6 +345,8 @@ class Finalizer:
                 "tests/core/test_voicebox_mcp_check.py",
                 "tests/core/test_real_user_acceptance.py",
                 "tests/core/test_acceptance_cmd.py",
+                "tests/core/test_capability_catalog.py",
+                "tests/core/test_loopback_http.py",
                 "tests/security/test_capabilities.py",
                 "tests/cli/test_standalone_security.py",
                 "tests/operators/test_operators.py",
@@ -418,21 +444,22 @@ class Finalizer:
         # Install/update the lightweight daily metadata service requested for
         # the workstation. This refreshes project, machine and drive inventory;
         # it intentionally does not hash duplicates or delete anything.
-        self.run(
-            "09-scheduled-scan-install",
-            [
-                self.uv,
-                "run",
-                "jarvis",
-                "projects",
-                "install-scan-task",
-                "--root",
-                "D:\\",
-                "--daily-at",
-                "03:00",
-            ],
-            required=False,
-        )
+        if self.install_scan_task:
+            self.run(
+                "09-scheduled-scan-install",
+                [
+                    self.uv,
+                    "run",
+                    "jarvis",
+                    "projects",
+                    "install-scan-task",
+                    "--root",
+                    "D:\\",
+                    "--daily-at",
+                    "03:00",
+                ],
+                required=False,
+            )
         self.run(
             "10-scheduled-scan-status",
             [
@@ -505,6 +532,16 @@ def main() -> int:
         action="store_true",
         help="Also rerun the slower whole-D cleanup ranking.",
     )
+    parser.add_argument(
+        "--no-start-services",
+        action="store_true",
+        help="Inspect the existing server; never start services for verification.",
+    )
+    parser.add_argument(
+        "--no-install-scan-task",
+        action="store_true",
+        help="Inspect the existing inventory task without installing or enabling it.",
+    )
     args = parser.parse_args()
 
     finalizer = Finalizer(
@@ -512,6 +549,8 @@ def main() -> int:
         Path(args.state),
         Path(args.projects),
         run_cleanup=args.cleanup,
+        start_services=not args.no_start_services,
+        install_scan_task=not args.no_install_scan_task,
     )
     try:
         zip_path = finalizer.finalize()

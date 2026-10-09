@@ -6,6 +6,7 @@ import wave
 
 import httpx
 
+from openjarvis.core.http import trust_environment_for_url
 from openjarvis.core.registry import TTSRegistry
 from openjarvis.speech.tts import TTSBackend, TTSResult
 
@@ -19,7 +20,11 @@ class VoiceboxTTSBackend(TTSBackend):
             from openjarvis.core.config import load_config
 
             host = load_config().projects.voicebox_host
-        self._client = client or httpx.Client(base_url=host.rstrip("/"), timeout=10)
+        self._client = client or httpx.Client(
+            base_url=host.rstrip("/"),
+            timeout=10,
+            trust_env=trust_environment_for_url(host),
+        )
         self._owns_client = client is None
         self._timeout = timeout
 
@@ -87,7 +92,9 @@ class VoiceboxTTSBackend(TTSBackend):
                     "Voicebox generation is still running; inspect it before retrying"
                 )
             time.sleep(0.25)
-            response = self._client.get(f"/generate/{generation_id}/status")
+            # /generate/{id}/status is an SSE stream in Voicebox 0.5.
+            # History exposes the same persisted state as bounded JSON.
+            response = self._client.get(f"/history/{generation_id}")
             response.raise_for_status()
             generation = response.json()
         if generation.get("status") != "completed":
