@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterator
 
 import click
@@ -237,7 +238,15 @@ def start(
     bind_port = port if port is not None else config.server.port
 
     # Build command to run jarvis serve
-    cmd = [sys.executable, "-m", "openjarvis.cli", "serve"]
+    executable = sys.executable
+    # Windows virtualenv console launchers can create a child console even
+    # when the launcher is detached. Prefer the sibling GUI launcher so a
+    # terminal-close event cannot abort native libraries in the server.
+    if sys.platform == "win32":
+        windowless = Path(executable).with_name("pythonw.exe")
+        if windowless.is_file():
+            executable = str(windowless)
+    cmd = [executable, "-m", "openjarvis.cli", "serve"]
     if host:
         cmd.extend(["--host", host])
     if port is not None:
@@ -261,7 +270,12 @@ def start(
     spawn_kwargs: dict = {}
     if sys.platform == "win32":
         spawn_kwargs["creationflags"] = (
-            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            (
+                subprocess.CREATE_NO_WINDOW
+                if executable != sys.executable
+                else subprocess.DETACHED_PROCESS
+            )
+            | subprocess.CREATE_NEW_PROCESS_GROUP
         )
     else:
         spawn_kwargs["start_new_session"] = True
@@ -276,6 +290,7 @@ def start(
             with open(_LOG_FILE, "a") as log_fh:
                 proc = subprocess.Popen(
                     cmd,
+                    stdin=subprocess.DEVNULL,
                     stdout=log_fh,
                     stderr=log_fh,
                     env={**os.environ, _LAUNCH_TOKEN_ENV: launch_token},

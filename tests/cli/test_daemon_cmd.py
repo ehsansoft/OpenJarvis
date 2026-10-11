@@ -148,6 +148,32 @@ class TestDaemonDetachment:
     off) delivers CTRL_CLOSE_EVENT and kills the daemon.
     """
 
+    def test_windows_uses_available_windowless_launcher(self, tmp_path):
+        interpreter = tmp_path / "python.exe"
+        windowless = tmp_path / "pythonw.exe"
+        windowless.touch()
+        with (
+            patch("openjarvis.cli.daemon_cmd._read_pid", return_value=None),
+            patch("openjarvis.cli.daemon_cmd._read_pid_unlocked", return_value=None),
+            patch("openjarvis.cli.daemon_cmd._state_lock", return_value=nullcontext()),
+            patch("openjarvis.cli.daemon_cmd._write_pid_unlocked"),
+            patch("openjarvis.cli.daemon_cmd.load_config"),
+            patch("openjarvis.cli.daemon_cmd.sys.platform", "win32"),
+            patch("openjarvis.cli.daemon_cmd.sys.executable", str(interpreter)),
+            patch("openjarvis.cli.daemon_cmd.DEFAULT_CONFIG_DIR", tmp_path),
+            patch("openjarvis.cli.daemon_cmd._LOG_FILE", tmp_path / "server.log"),
+            patch("openjarvis.cli.daemon_cmd.subprocess.Popen") as popen,
+            patch.object(subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True),
+            patch.object(
+                subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200, create=True
+            ),
+        ):
+            popen.return_value = MagicMock(pid=4321)
+            result = CliRunner().invoke(cli, ["start"])
+        assert result.exit_code == 0, result.output
+        assert popen.call_args.args[0][0] == str(windowless)
+        assert popen.call_args.kwargs["stdin"] == subprocess.DEVNULL
+
     @staticmethod
     def _spawn_kwargs(platform: str) -> dict:
         """Return the kwargs ``start`` passes to Popen when spawning the server.
@@ -259,11 +285,18 @@ class TestDaemonDetachment:
         create_new_process_group = getattr(
             subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200
         )
+        create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
         with (
             patch.object(
                 subprocess,
                 "DETACHED_PROCESS",
                 detached_process,
+                create=True,
+            ),
+            patch.object(
+                subprocess,
+                "CREATE_NO_WINDOW",
+                create_no_window,
                 create=True,
             ),
             patch.object(
@@ -276,8 +309,8 @@ class TestDaemonDetachment:
             kwargs = self._spawn_kwargs("win32")
 
         flags = kwargs.get("creationflags", 0)
-        assert flags & detached_process, (
-            "server must be spawned with DETACHED_PROCESS on Windows, otherwise "
+        assert flags & (detached_process | create_no_window), (
+            "server must be spawned without a console on Windows, otherwise "
             "closing the launching console kills it"
         )
         assert flags & create_new_process_group, (

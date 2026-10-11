@@ -875,7 +875,7 @@ def ask(
     if image_b64:
         if not agent_explicitly_set:
             agent_name = ""
-        else:
+        elif agent_name:
             console.print(
                 "[yellow]Note:[/yellow] --image/--screen only works in direct "
                 "mode; the image is ignored with --agent set. Re-run with "
@@ -1174,7 +1174,9 @@ def ask(
         return
 
     # Direct-to-engine mode (no agent)
-    if image_b64 and engine_name not in LOCAL_ENGINES:
+    from openjarvis.engine.privacy import inference_stays_local
+
+    if image_b64 and not inference_stays_local(engine, engine_name, model_name):
         console.print(
             f"[yellow]Privacy warning:[/yellow] sending {len(image_b64)} "
             f"image(s) to a non-local engine ('{engine_name}'). The image will "

@@ -93,6 +93,7 @@ def test_image_reaches_engine_payload(monkeypatch, tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     # The CLI must have routed to direct mode and called the engine.
+    assert "image is ignored" not in result.output
     assert engine.received, "engine.generate() was never called"
     user_msgs = [m for m in engine.received if m.role == Role.USER]
     assert user_msgs, "no USER message reached the engine"
@@ -126,3 +127,34 @@ def test_no_privacy_warning_for_local_engine(monkeypatch, tmp_path: Path) -> Non
 
     assert result.exit_code == 0, result.output
     assert "Privacy warning" not in result.output
+
+
+def test_private_pool_vision_has_no_remote_warning(monkeypatch, tmp_path: Path) -> None:
+    from openjarvis.engine.privacy import PrivatePoolEngine
+
+    engine = _patch_ask(monkeypatch, tmp_path, engine_name="free-pool")
+    pool = PrivatePoolEngine([("ollama", engine)])
+    monkeypatch.setattr(_ask_mod, "get_engine", lambda *a, **kw: ("free-pool", pool))
+    img, expected_b64 = _write_png(tmp_path)
+
+    result = CliRunner().invoke(
+        cli,
+        ["ask", "-i", str(img), "--no-context", "--agent", "", "describe this"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Privacy warning" not in result.output
+    assert "image is ignored" not in result.output
+    assert engine.received[-1].images == [expected_b64]
+
+
+def test_vision_policy_preserves_warning_for_remote_enabled_pool() -> None:
+    from openjarvis.core.events import EventBus
+    from openjarvis.engine.privacy import inference_stays_local
+    from openjarvis.intelligence.free_pool import FreePoolEngine
+    from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
+
+    pool = FreePoolEngine([("ollama", _RecordingEngine())], allow_remote=True)
+    wrapped = InstrumentedEngine(pool, EventBus())
+    assert not inference_stays_local(wrapped, "free-pool", "free/vision")
+    assert inference_stays_local(wrapped, "free-pool", "local/vision")

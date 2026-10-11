@@ -1,0 +1,16 @@
+[skill]
+name = "workstation-brief"
+version = "1.0.0"
+description = "Read cached drive and workstation summaries; no shell, downloads, file changes or external messages."
+author = "Ehsan OpenJarvis"
+tags = ["productivity", "local", "read-only"]
+
+[[skill.steps]]
+tool_name = "drive_inventory"
+arguments_template = '{"section":"summary"}'
+output_key = "drive_summary"
+
+[[skill.steps]]
+tool_name = "machine_inventory"
+arguments_template = '{"section":"summary"}'
+output_key = "machine_summary"

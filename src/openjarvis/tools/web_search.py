@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from openjarvis import __version__
 from openjarvis.core.registry import ToolRegistry
@@ -443,9 +443,17 @@ class WebSearchTool(BaseTool):
         raw_results = list(ddgs.text(query, max_results=max_results))
         results = []
         for r in raw_results:
-            title = r.get("title", "Untitled")
-            url = r.get("href", "")
-            snippet = r.get("body", "")
+            if not isinstance(r, dict):
+                continue
+            url = str(r.get("href") or r.get("url") or "").strip()
+            try:
+                parsed = urlsplit(url)
+                if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                    continue
+            except ValueError:
+                continue
+            title = str(r.get("title") or "Untitled").strip() or "Untitled"
+            snippet = str(r.get("body") or r.get("description") or "").strip()
             results.append(f"### {title}\nSource: {url}\nSummary: {snippet}")
 
         formatted = "\n\n---\n\n".join(results)

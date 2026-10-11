@@ -571,6 +571,9 @@ def create_app(
     app.include_router(research_router)
     app.include_router(analytics_router)
     include_all_routes(app)
+    from openjarvis.server.control_router import initialize_control
+
+    initialize_control(app)
 
     # Restore SendBlue channel bindings from database on startup
     _restore_sendblue_bindings(app)

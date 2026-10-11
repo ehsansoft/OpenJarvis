@@ -155,9 +155,15 @@ disabled, and no Project Intelligence migrations have started.
 
 ## Manual Telegram setup
 
+Current workstation continuation (2026-10-12): the configured server uses
+`127.0.0.1:18080`; port 8000 is reserved by Windows. The October 8 evidence above
+is historical. The Control Desk is at `/control`, one-shot scheduler execution
+is now verified, and voice interaction remains deferred. See
+`EHSAN_CONTROL_DESK.md` and `EHSAN_PRACTICAL_WORKFLOWS.md` for current status.
+
 1. In Telegram, open **@BotFather**, run `/newbot`, and copy its token privately.
    Keep the bot token out of repository files and shell literals.
-2. Stop the existing OpenJarvis server through its owning terminal before doing
+2. Stop the existing OpenJarvis server with `uv run --no-sync jarvis stop` before doing
    the one-time chat-id lookup. Do not run `jarvis channel listen` alongside
    `jarvis serve`; that creates a competing bot poller.
 3. Set the token in the server's PowerShell session using hidden input:
@@ -201,7 +207,8 @@ db_path = "D:\\AI-Control\\OpenJarvis\\scheduler.db"
 ```
 
 6. Start exactly one loopback server in that same PowerShell:
-   `uv run jarvis serve --host 127.0.0.1 --port 8000`.
+   `uv run --no-sync jarvis start --host 127.0.0.1 --port 18080`
+   from the same token-bearing PowerShell session. Check `jarvis status`.
    Send `Reply TELEGRAM_OK`, then `/notify telegram`. Verify one reply each.
    A second, unlisted Telegram account must receive no reply. Restart the server
    in the same token-bearing shell and confirm history isolation and one reply

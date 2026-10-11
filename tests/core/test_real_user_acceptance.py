@@ -33,7 +33,9 @@ def test_legacy_named_scheduler_run_uses_owned_server(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(scheduler_cmd, "_get_store", lambda: store)
     post = MagicMock(return_value=httpx.Response(200, json={"success": True}))
-    monkeypatch.setattr(httpx, "post", post)
+    client = MagicMock()
+    client.__enter__.return_value.post = post
+    monkeypatch.setattr(httpx, "Client", MagicMock(return_value=client))
     result = CliRunner().invoke(scheduler_cmd.scheduler, ["run-task", "none"])
     assert result.exit_code == 0, result.output
     post.assert_called_once()

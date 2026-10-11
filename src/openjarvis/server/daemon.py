@@ -33,6 +33,7 @@ def run_server(app: Any, *, host: str, port: int, log_level: str = "info") -> No
     server = DaemonServer(
         uvicorn.Config(app, host=host, port=port, log_level=log_level)
     )
+    app.state.daemon_server = server
     try:
         server.run()
     finally:

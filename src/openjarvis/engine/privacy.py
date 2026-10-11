@@ -3,6 +3,21 @@
 from openjarvis.intelligence.free_pool import FreePoolEngine, _is_zero_api_local_engine
 
 
+def inference_stays_local(engine, engine_key, model=""):
+    """Inspect the effective routing policy through security/telemetry wrappers."""
+    from openjarvis.security.guardrails import GuardrailsEngine
+    from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
+
+    current = engine
+    while isinstance(current, (GuardrailsEngine, InstrumentedEngine)):
+        current = (
+            current._engine if isinstance(current, GuardrailsEngine) else current._inner
+        )
+    if isinstance(current, FreePoolEngine):
+        return not current._allow_remote or bool(model and model.startswith("local/"))
+    return _is_zero_api_local_engine(engine_key, current)
+
+
 class PrivatePoolEngine(FreePoolEngine):
     """Local aliases and local concrete models only; remote failover is impossible."""
 

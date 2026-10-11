@@ -58,6 +58,23 @@ def test_machine_inventory_ignores_broken_proxy_for_loopback(local_service):
     assert detect_ollama(local_service)["reachable"] is True
 
 
+def test_scheduler_cli_execution_ignores_loopback_proxy(local_service, monkeypatch):
+    from urllib.parse import urlsplit
+
+    from click.testing import CliRunner
+
+    from openjarvis.cli.scheduler_cmd import scheduler
+    from openjarvis.core.config import JarvisConfig
+
+    config = JarvisConfig()
+    config.server.host = "127.0.0.1"
+    config.server.port = urlsplit(local_service).port
+    monkeypatch.setattr("openjarvis.core.config.load_config", lambda: config)
+    result = CliRunner().invoke(scheduler, ["run", "fixture-task"])
+    assert result.exit_code == 0, result.output
+    assert '"embeddings"' in result.output
+
+
 @pytest.mark.parametrize(
     "factory", [OllamaEngine, VoiceboxSpeechBackend, VoiceboxTTSBackend]
 )

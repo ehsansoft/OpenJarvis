@@ -316,14 +316,20 @@ def scheduler_run(task_id: str) -> None:
     import httpx
 
     from openjarvis.core.config import load_config
+    from openjarvis.core.http import trust_environment_for_url
 
     config = load_config()
     key = os.environ.get("OPENJARVIS_API_KEY", "")
-    response = httpx.post(
-        f"http://{config.server.host}:{config.server.port}/v1/scheduler/tasks/{task_id}/run",
-        headers={"Authorization": f"Bearer {key}"} if key else {},
-        timeout=300,
+    url = (
+        f"http://{config.server.host}:{config.server.port}"
+        f"/v1/scheduler/tasks/{task_id}/run"
     )
+    with httpx.Client(trust_env=trust_environment_for_url(url)) as client:
+        response = client.post(
+            url,
+            headers={"Authorization": f"Bearer {key}"} if key else {},
+            timeout=300,
+        )
     if not response.is_success:
         raise click.ClickException(f"Scheduler returned HTTP {response.status_code}")
     click.echo(response.text)
