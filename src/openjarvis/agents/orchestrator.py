@@ -96,6 +96,43 @@ class OrchestratorAgent(ToolUsingAgent):
         context: Optional[AgentContext] = None,
         **kwargs: Any,
     ) -> AgentResult:
+        from openjarvis.agents.machine_summary import (
+            format_machine_summary,
+            is_machine_summary_question,
+        )
+
+        if is_machine_summary_question(input) and any(
+            tool.spec.name == "machine_inventory" for tool in self._tools
+        ):
+            self._emit_turn_start(input)
+            self._build_messages(input, context)
+            call = ToolCall(
+                id="machine_summary",
+                name="machine_inventory",
+                arguments='{"section":"summary"}',
+            )
+            result = self._check_tool_allowed(call)
+            if result is None and self._loop_guard:
+                verdict = self._loop_guard.check_call(call.name, call.arguments)
+                if verdict.blocked:
+                    result = ToolResult(
+                        tool_name=call.name,
+                        success=False,
+                        content=f"Loop guard: {verdict.reason}",
+                    )
+            if result is None:
+                result = self._executor.execute(call)
+            content = result.content
+            if result.success:
+                try:
+                    content = format_machine_summary(content)
+                except (ValueError, TypeError):
+                    content = (
+                        "Machine inventory could not be summarized. Run "
+                        "`jarvis projects machine-scan` to refresh it."
+                    )
+            self._emit_turn_end(turns=1)
+            return AgentResult(content=content, tool_results=[result], turns=1)
         if self._mode == "structured":
             return self._run_structured(input, context, **kwargs)
         return self._run_function_calling(input, context, **kwargs)

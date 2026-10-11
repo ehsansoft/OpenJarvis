@@ -27,8 +27,40 @@ from openjarvis.projects import (
     write_registry,
 )
 from openjarvis.projects.review import PROJECT_ROLES, manifest_preview, registry_preview
+from openjarvis.projects.space_audit import scan_space_audit
 
 _SCAN_TASK_NAME = "OpenJarvis Drive Inventory"
+
+
+@click.command("space-audit")
+@click.argument("root", type=click.Path(exists=True, path_type=Path))
+@click.option("--output", type=click.Path(path_type=Path), default=None)
+@click.option("--max-files", type=click.IntRange(min=1), default=3_000_000)
+def space_audit(root: Path, output: Path | None, max_files: int) -> None:
+    """Read sizes including node_modules; never remove files or follow links."""
+    if output is not None and output.exists():
+        raise click.ClickException("Output already exists; choose a new report path")
+
+    def progress(files: int, path: str) -> None:
+        click.echo(f"Space audit: {files:,} files examined", err=True)
+
+    try:
+        report = scan_space_audit(root, max_files=max_files, progress=progress)
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    serialized = json.dumps(report, indent=2, ensure_ascii=False)
+    if output is None:
+        click.echo(serialized)
+    else:
+        if output.exists():
+            raise click.ClickException(
+                "Output already exists; choose a new report path"
+            )
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("x", encoding="utf-8") as stream:
+            stream.write(serialized + "\n")
+        click.echo(f"Read-only space report: {output.resolve()}")
+        click.echo(f"Partial: {report['truncated']}; approval required for cleanup.")
 
 
 def _default_root(configured_root: str) -> Path:
@@ -676,5 +708,7 @@ def remove_scan_task() -> None:
         )
     click.echo(f"Removed Windows task: {_SCAN_TASK_NAME}")
 
+
+projects.add_command(space_audit)
 
 __all__ = ["projects"]

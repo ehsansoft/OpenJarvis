@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+import tomllib
+
 VERSION = "0.1.0-alpha.4.3"
 
 
@@ -85,6 +87,18 @@ class Finalizer:
         self.run_cleanup = run_cleanup
         self.start_services = start_services
         self.install_scan_task = install_scan_task
+        config_path = state / "config.toml"
+        config = (
+            tomllib.loads(config_path.read_text(encoding="utf-8"))
+            if config_path.exists()
+            else {}
+        )
+        server = config.get("server", {})
+        host = server.get("host", "127.0.0.1")
+        if host != "localhost" and not ipaddress.ip_address(host).is_loopback:
+            raise ValueError("Finalizer requires a loopback server host")
+        port = int(server.get("port", 8000))
+        self.server_base = f"http://{'[' + host + ']' if ':' in host else host}:{port}"
         self.support_root = state / "support"
         self.run_dir = self.support_root / f"finalize-alpha4.3-{_stamp()}"
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -178,24 +192,24 @@ class Finalizer:
     def server_smoke(self) -> None:
         name = "12-server-smoke"
         report: dict[str, Any] = {
-            "base": "http://127.0.0.1:8000",
+            "base": self.server_base,
             "started_by_finalizer": False,
             "services_start_allowed": self.start_services,
             "models_ok": False,
         }
 
         root_ok, root_payload = self._http_get_json(
-            "http://127.0.0.1:8000/router/v1",
+            f"{self.server_base}/router/v1",
             timeout=2,
         )
         ok, payload = self._http_get_json(
-            "http://127.0.0.1:8000/router/v1/models",
+            f"{self.server_base}/router/v1/models",
             # A live free-provider roster refresh can exceed a local probe's
             # two-second timeout even when the existing server is healthy.
             timeout=30,
         )
         health_ok, _health_payload = self._http_get_json(
-            "http://127.0.0.1:8000/health",
+            f"{self.server_base}/health",
             timeout=2,
         )
         process: subprocess.Popen[str] | None = None
@@ -203,7 +217,7 @@ class Finalizer:
 
         if health_ok and ok and not root_ok:
             raise RuntimeError(
-                "An older OpenJarvis server is already running on port 8000. "
+                f"An older OpenJarvis server is already running at {self.server_base}. "
                 "Stop it with Ctrl+C, then rerun finalization so the updated "
                 "/router/v1 discovery endpoint can be verified."
             )
@@ -220,9 +234,9 @@ class Finalizer:
                     "jarvis",
                     "serve",
                     "--host",
-                    "127.0.0.1",
+                    urlsplit(self.server_base).hostname,
                     "--port",
-                    "8000",
+                    str(urlsplit(self.server_base).port),
                 ],
                 cwd=self.repo,
                 env=self.env,
@@ -237,11 +251,11 @@ class Finalizer:
                 if process.poll() is not None:
                     break
                 root_ok, root_payload = self._http_get_json(
-                    "http://127.0.0.1:8000/router/v1",
+                    f"{self.server_base}/router/v1",
                     timeout=2,
                 )
                 ok, payload = self._http_get_json(
-                    "http://127.0.0.1:8000/router/v1/models",
+                    f"{self.server_base}/router/v1/models",
                     timeout=30,
                 )
                 if ok and root_ok:
@@ -302,14 +316,21 @@ class Finalizer:
         if source.is_dir():
             for path in source.iterdir():
                 if path.is_file():
-                    shutil.copy2(path, destination / path.name)
+                    if path.suffix == ".jsonc":
+                        text = path.read_text(encoding="utf-8").replace(
+                            "http://127.0.0.1:8000/router/v1",
+                            f"{self.server_base}/router/v1",
+                        )
+                        (destination / path.name).write_text(text, encoding="utf-8")
+                    else:
+                        shutil.copy2(path, destination / path.name)
                     copied.append(path.name)
         (self.run_dir / "13-editor-configs.json").write_text(
             json.dumps(
                 {
                     "destination": str(destination),
                     "files": copied,
-                    "base_url": "http://127.0.0.1:8000/router/v1",
+                    "base_url": f"{self.server_base}/router/v1",
                     "recommended_model": "local/code",
                 },
                 indent=2,
@@ -498,8 +519,8 @@ class Finalizer:
             "state": str(self.state),
             "projects": str(self.projects),
             "voicebox_reachable": voicebox,
-            "editor_api": "http://127.0.0.1:8000/router/v1",
-            "personal_api": "http://127.0.0.1:8000/v1",
+            "editor_api": f"{self.server_base}/router/v1",
+            "personal_api": f"{self.server_base}/v1",
             "recommended_editor_model": "local/code",
             "results": self.results,
         }
@@ -575,7 +596,7 @@ def main() -> int:
 
     print("\nOpenJarvis finalization complete.")
     print(f"Support ZIP: {zip_path}")
-    print("Editor API: http://127.0.0.1:8000/router/v1")
+    print(f"Editor API: {finalizer.server_base}/router/v1")
     print("Editor model: local/code")
     return 0
 

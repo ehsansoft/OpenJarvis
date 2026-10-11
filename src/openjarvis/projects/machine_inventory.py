@@ -18,7 +18,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
+
+from openjarvis.core.http import trust_environment_for_url
 
 
 @dataclass(slots=True)
@@ -365,7 +367,12 @@ def _normalize_voicebox_host(host: str) -> str:
 
 def _http_json(url: str, *, timeout: float = 4.0) -> Any:
     request = Request(url, headers={"Accept": "application/json"})
-    with urlopen(request, timeout=timeout) as response:  # noqa: S310
+    open_url = (
+        urlopen
+        if trust_environment_for_url(url)
+        else build_opener(ProxyHandler({})).open
+    )
+    with open_url(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -672,9 +679,7 @@ def detect_ollama(
     result["storage_roots"] = storage_roots
 
     try:
-        request = Request(f"{base}/api/tags", headers={"Accept": "application/json"})
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310
-            payload = json.loads(response.read().decode("utf-8"))
+        payload = _http_json(f"{base}/api/tags", timeout=timeout)
     except (URLError, OSError, ValueError, json.JSONDecodeError):
         return result
 

@@ -12,6 +12,7 @@ from openjarvis.connectors.embeddings import OllamaEmbedder as ConnectorEmbedder
 from openjarvis.core.http import trust_environment_for_url
 from openjarvis.engine.ollama import OllamaEngine
 from openjarvis.mcp.transport import StreamableHTTPTransport
+from openjarvis.projects.machine_inventory import _http_json, detect_ollama
 from openjarvis.speech.voicebox_stt import VoiceboxSpeechBackend
 from openjarvis.speech.voicebox_tts import VoiceboxTTSBackend
 from openjarvis.tools.storage.embeddings import OllamaEmbedder
@@ -50,6 +51,11 @@ def local_service(monkeypatch):
     server.shutdown()
     server.server_close()
     worker.join()
+
+
+def test_machine_inventory_ignores_broken_proxy_for_loopback(local_service):
+    assert _http_json(local_service + "/health")["status"] == "healthy"
+    assert detect_ollama(local_service)["reachable"] is True
 
 
 @pytest.mark.parametrize(

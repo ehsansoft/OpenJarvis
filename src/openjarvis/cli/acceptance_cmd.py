@@ -97,6 +97,11 @@ def generate_support_zip(run_dir: Path, report: dict, repo: Path) -> Path:
 @click.option(
     "--live", is_flag=True, help="Run synthetic local inference and service checks."
 )
+@click.option(
+    "--text-only",
+    is_flag=True,
+    help="Skip live speech checks and microphone acceptance.",
+)
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 @click.option(
     "--speech-fixture",
@@ -108,10 +113,17 @@ def generate_support_zip(run_dir: Path, report: dict, repo: Path) -> Path:
     "--skip-regression", is_flag=True, help="Record regression checks as not run."
 )
 def acceptance(
-    live: bool, output: Path | None, speech_fixture: Path | None, skip_regression: bool
+    live: bool,
+    output: Path | None,
+    speech_fixture: Path | None,
+    skip_regression: bool,
+    text_only: bool = False,
 ) -> None:
     """Verify Phase 0.5 and generate a support ZIP without enabling automations."""
     from openjarvis.core.paths import get_config_dir
+
+    if text_only and speech_fixture is not None:
+        raise click.UsageError("--text-only cannot be combined with --speech-fixture")
 
     repo = Path(__file__).resolve().parents[3]
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -125,6 +137,7 @@ def acceptance(
         "timestamp": stamp,
         "checks": [],
         "automation_enabled": False,
+        "text_only": text_only,
     }
     checks = report["checks"]
     if not skip_regression:
@@ -174,7 +187,11 @@ def acceptance(
         checks.append({"name": "regression", "status": "NOT_RUN"})
     if live:
         try:
-            report["context_sha256"] = _live_checks(checks, run_dir, speech_fixture)
+            report["context_sha256"] = (
+                _live_checks(checks, run_dir, speech_fixture, text_only=True)
+                if text_only
+                else _live_checks(checks, run_dir, speech_fixture)
+            )
         except Exception as exc:
             checks.append(
                 {"name": "live_setup", "status": "FAIL", "error": redact(str(exc))}
@@ -194,7 +211,15 @@ def acceptance(
             "Merge Kilo template, then select openai-compatible/openjarvis-local-code",
         ),
     ):
-        checks.append({"name": name, "status": "MANUAL_REQUIRED", "command": command})
+        checks.append(
+            {
+                "name": name,
+                "status": "NOT_RUN"
+                if text_only and name == "microphone_and_listening"
+                else "MANUAL_REQUIRED",
+                "command": command,
+            }
+        )
     report["ready_for_personal_automations"] = False
     archive = generate_support_zip(run_dir, report, repo)
     click.echo(
@@ -212,7 +237,11 @@ def acceptance(
 
 
 def _live_checks(
-    checks: list, run_dir: Path, speech_fixture: Path | None = None
+    checks: list,
+    run_dir: Path,
+    speech_fixture: Path | None = None,
+    *,
+    text_only: bool = False,
 ) -> str:
 
     from openjarvis.connectors.embeddings import OllamaEmbedder
@@ -446,67 +475,76 @@ def _live_checks(
             store.close()
 
     record("deep_research_real", deep_research)
-    record(
-        "voicebox_service",
-        lambda: metadata_probe(config.projects.voicebox_host, "/health"),
-    )
-    voice_status = metadata_probe(config.projects.voicebox_host, "/models/status")
-    if speech_fixture is not None:
-
-        def transcribe_fixture():
-            from openjarvis.speech.voicebox_stt import VoiceboxSpeechBackend
-
-            audio = speech_fixture.read_bytes()
-            result = VoiceboxSpeechBackend(
-                host=config.projects.voicebox_host, require_loaded=True
-            ).transcribe(audio)
-            if not result.text:
-                raise RuntimeError("Voicebox STT returned empty text")
-            return {
-                "text_present": True,
-                "audio_sha256": hashlib.sha256(audio).hexdigest(),
-                "scope": "operator-supplied synthetic WAV; no audio in ZIP",
-            }
-
-        record("voicebox_stt_live", transcribe_fixture)
-    loaded_tts = any(
-        m.get("model_name") == "kokoro" and m.get("loaded")
-        for m in voice_status.get("models", [])
-    )
-    if not loaded_tts:
+    if text_only:
         checks.append(
             {
-                "name": "voicebox_tts_live",
-                "status": "BLOCKED",
-                "reason": "Kokoro is not loaded; load the cached model manually.",
+                "name": "voicebox_live",
+                "status": "NOT_RUN",
+                "reason": "Text-only acceptance requested",
             }
         )
     else:
+        record(
+            "voicebox_service",
+            lambda: metadata_probe(config.projects.voicebox_host, "/health"),
+        )
+        voice_status = metadata_probe(config.projects.voicebox_host, "/models/status")
+        if speech_fixture is not None:
 
-        def voice():
-            from openjarvis.speech.voicebox_stt import VoiceboxSpeechBackend
-            from openjarvis.speech.voicebox_tts import VoiceboxTTSBackend
+            def transcribe_fixture():
+                from openjarvis.speech.voicebox_stt import VoiceboxSpeechBackend
 
-            tts = VoiceboxTTSBackend(host=config.projects.voicebox_host)
-            result = tts.synthesize(
-                "This is a local acceptance test.",
-                output_format="wav",
-                voice_id=config.speech.voice_id,
+                audio = speech_fixture.read_bytes()
+                result = VoiceboxSpeechBackend(
+                    host=config.projects.voicebox_host, require_loaded=True
+                ).transcribe(audio)
+                if not result.text:
+                    raise RuntimeError("Voicebox STT returned empty text")
+                return {
+                    "text_present": True,
+                    "audio_sha256": hashlib.sha256(audio).hexdigest(),
+                    "scope": "operator-supplied synthetic WAV; no audio in ZIP",
+                }
+
+            record("voicebox_stt_live", transcribe_fixture)
+        loaded_tts = any(
+            m.get("model_name") == "kokoro" and m.get("loaded")
+            for m in voice_status.get("models", [])
+        )
+        if not loaded_tts:
+            checks.append(
+                {
+                    "name": "voicebox_tts_live",
+                    "status": "BLOCKED",
+                    "reason": "Kokoro is not loaded; load the cached model manually.",
+                }
             )
-            (run_dir / "voicebox-acceptance.wav").write_bytes(result.audio)
-            stt = VoiceboxSpeechBackend(
-                host=config.projects.voicebox_host, require_loaded=True
-            )
-            transcription = stt.transcribe(result.audio)
-            if not transcription.text:
-                raise RuntimeError("Voicebox STT returned empty text")
-            return {
-                "duration": result.duration_seconds,
-                "text_present": True,
-                "scope": "synthetic WAV round trip; human listening required",
-            }
+        else:
 
-        record("voicebox_tts_stt_roundtrip", voice)
+            def voice():
+                from openjarvis.speech.voicebox_stt import VoiceboxSpeechBackend
+                from openjarvis.speech.voicebox_tts import VoiceboxTTSBackend
+
+                tts = VoiceboxTTSBackend(host=config.projects.voicebox_host)
+                result = tts.synthesize(
+                    "This is a local acceptance test.",
+                    output_format="wav",
+                    voice_id=config.speech.voice_id,
+                )
+                (run_dir / "voicebox-acceptance.wav").write_bytes(result.audio)
+                stt = VoiceboxSpeechBackend(
+                    host=config.projects.voicebox_host, require_loaded=True
+                )
+                transcription = stt.transcribe(result.audio)
+                if not transcription.text:
+                    raise RuntimeError("Voicebox STT returned empty text")
+                return {
+                    "duration": result.duration_seconds,
+                    "text_present": True,
+                    "scope": "synthetic WAV round trip; human listening required",
+                }
+
+            record("voicebox_tts_stt_roundtrip", voice)
     local.close()
     tags = metadata_probe(config.engine.ollama.host, "/api/tags")
     metadata = []

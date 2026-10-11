@@ -22,6 +22,37 @@ def _module():
     return module
 
 
+def test_finalizer_uses_configured_loopback_port_in_probes_and_templates(tmp_path):
+    module = _module()
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "config.toml").write_text('[server]\nhost="127.0.0.1"\nport=18080\n')
+    finalizer = module.Finalizer(
+        tmp_path, state, tmp_path / "projects", start_services=False
+    )
+    calls = []
+
+    def probe(url, **kwargs):
+        calls.append(url)
+        return True, {"data": [{"id": "local/code"}]}
+
+    finalizer._http_get_json = probe
+    finalizer.server_smoke()
+    assert calls and all(url.startswith("http://127.0.0.1:18080/") for url in calls)
+    assert finalizer.server_base == "http://127.0.0.1:18080"
+    import json
+
+    source = tmp_path / "configs" / "editors"
+    source.mkdir(parents=True)
+    template = source / "opencode.jsonc"
+    original = '{"baseURL":"http://127.0.0.1:8000/router/v1"}'
+    template.write_text(original)
+    finalizer.copy_editor_templates()
+    merged = json.loads((state / "editor-configs" / template.name).read_text())
+    assert merged["baseURL"] == "http://127.0.0.1:18080/router/v1"
+    assert template.read_text() == original
+
+
 def test_evidence_zip_excludes_test_state_and_redacts_tokens(tmp_path, monkeypatch):
     module = _module()
     run = tmp_path / "run"

@@ -14,6 +14,53 @@ from openjarvis.cli.acceptance_cmd import (
 )
 
 
+def test_text_only_acceptance_skips_microphone_and_forwards_live_scope(
+    tmp_path, monkeypatch
+):
+    from click.testing import CliRunner
+
+    import openjarvis.cli.acceptance_cmd as module
+
+    def live(checks, run_dir, fixture, *, text_only):
+        assert text_only is True
+        assert fixture is None
+        checks.append({"name": "voicebox_live", "status": "NOT_RUN"})
+        return "fixture-context"
+
+    monkeypatch.setattr(module, "_live_checks", live)
+    result = CliRunner().invoke(
+        module.acceptance,
+        [
+            "--live",
+            "--text-only",
+            "--skip-regression",
+            "--output",
+            str(tmp_path / "run"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    report = json.loads((tmp_path / "run" / "acceptance.json").read_text())
+    checks = {c["name"]: c["status"] for c in report["checks"]}
+    assert checks["microphone_and_listening"] == "NOT_RUN"
+    assert checks["voicebox_live"] == "NOT_RUN"
+    assert checks["telegram_live"] == "MANUAL_REQUIRED"
+    assert report["ready_for_personal_automations"] is False
+
+
+def test_text_only_rejects_speech_fixture(tmp_path):
+    from click.testing import CliRunner
+
+    from openjarvis.cli.acceptance_cmd import acceptance
+
+    fixture = tmp_path / "fixture.wav"
+    fixture.write_bytes(b"synthetic")
+    result = CliRunner().invoke(
+        acceptance, ["--text-only", "--speech-fixture", str(fixture)]
+    )
+    assert result.exit_code != 0
+    assert "cannot be combined" in result.output
+
+
 def test_cli_acceptance_accepts_rich_stderr_and_rejects_missing_answer():
     check_cli_output(
         subprocess.CompletedProcess([], 0, "", "ACCEPTANCE_OK"), "ACCEPTANCE_OK"
