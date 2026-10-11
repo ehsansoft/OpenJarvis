@@ -162,3 +162,9 @@ approval before removing anything. Follow with CVI/CVI-Next role reconciliation
 and one bounded local-code project task. Phase 1C approvals and canonical
 Project Intelligence adoption remain future reviewed work. Existing PRs are
 drafts; no merge, tag or stable promotion was performed.
+
+Changes are committed on `feature/ehsan-text-space-audit`. Publishing this branch
+is blocked: GitHub rejected the native Git push with invalid username/token.
+No new PR was created; do not infer CI success from local checks. Existing draft
+PR #4 remains open and unmerged. Workstation config/provider backups are outside
+Git; the support ZIP stays on the workstation and includes no editor credentials.
