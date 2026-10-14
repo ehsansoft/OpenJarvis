@@ -35,6 +35,7 @@ _NOTIFICATION_EVENTS = [
     EventType.AGENT_TICK_ERROR,
     EventType.AGENT_BUDGET_EXCEEDED,
     EventType.SCHEDULER_TASK_END,
+    EventType.SCHEDULER_DELIVERY_TICK,
 ]
 
 
@@ -53,6 +54,7 @@ class ChannelBridge:
         system: Any = None,
         agent_manager: Any = None,
         deep_research_agent: Any = None,
+        outbox_path: Any = None,
     ) -> None:
         self._channels = channels
         self._session_store = session_store
@@ -67,6 +69,11 @@ class ChannelBridge:
         self._connected = False
         self._handlers_wired = False
         self._subscribed = False
+        self._outbox = None
+        if outbox_path is not None:
+            from openjarvis.scheduler.delivery import NotificationOutbox
+
+            self._outbox = NotificationOutbox(outbox_path)
         self._subscribe_notifications()
 
     # --------------------------------------------------------------
@@ -332,7 +339,12 @@ class ChannelBridge:
                 response_text = f"Research error: {exc}"
         elif self._system is not None:
             try:
-                result = self._system.ask(query, context=False)
+                kwargs = {"context": False}
+                if self._system.config.security.private_operations:
+                    from openjarvis.server.control_router import READ_TOOLS
+
+                    kwargs["tools"] = READ_TOOLS
+                result = self._system.ask(query, **kwargs)
                 response_text = result.get("content", str(result))
             except Exception:
                 logger.exception("Error in JarvisSystem.ask()")
@@ -387,6 +399,11 @@ class ChannelBridge:
         self._subscribed = True
 
     def _on_notification_event(self, event) -> None:  # noqa: ANN001
+        if event.event_type == EventType.SCHEDULER_DELIVERY_TICK:
+            if self._outbox is not None and self._connected:
+                self._recover_deliveries()
+                self._outbox.drain(self._deliver_queued)
+            return
         if event.event_type == EventType.SCHEDULER_TASK_END:
             # Scheduled results are private and must never broadcast to all users.
             notify = (event.data or {}).get("notify")
@@ -402,7 +419,31 @@ class ChannelBridge:
                 ):
                     message = self._format_notification(event)
                     if message:
-                        self._send_notification(channel, chat_id, message)
+                        if self._outbox is not None:
+                            state = (
+                                "completed" if event.data.get("success") else "failed"
+                            )
+                            message = (
+                                f"Scheduled task {event.data['task_id']} {state}. "
+                                "Check your local dashboard for details."
+                            )
+                            if event.data.get(
+                                "action"
+                            ) == "reminder" and event.data.get("success"):
+                                message = (
+                                    "Reminder: "
+                                    + str(event.data.get("result", ""))[:3000]
+                                )
+                            self._outbox.enqueue(
+                                event.data.get("run_id", event.data["task_id"]),
+                                channel,
+                                chat_id,
+                                message,
+                            )
+                            if self._connected:
+                                self._outbox.drain(self._deliver_queued)
+                        else:
+                            self._send_notification(channel, chat_id, message)
                     break
             return
         event_key = str(event.event_type)
@@ -446,20 +487,61 @@ class ChannelBridge:
             return f"Scheduled task '{name}' failed: {error}"
         return None
 
+    def _recover_deliveries(self):
+        from types import SimpleNamespace
+
+        scheduler = getattr(self._system, "scheduler", None)
+        if scheduler is None:
+            return
+        for task in scheduler.list_tasks()[:100]:
+            if not task.metadata.get("notify"):
+                continue
+            with scheduler._lock:
+                logs = scheduler._store.get_run_logs(task.id, limit=3)
+            for log in logs:
+                self._on_notification_event(
+                    SimpleNamespace(
+                        event_type=EventType.SCHEDULER_TASK_END,
+                        data={
+                            "task_id": task.id,
+                            "name": task.id,
+                            "success": bool(log["success"]),
+                            "result": log["result"],
+                            "notify": task.metadata["notify"],
+                            "run_id": f"{task.id}:{log['started_at']}",
+                            "action": task.metadata.get("action"),
+                        },
+                    )
+                )
+
+    def _deliver_queued(self, channel, chat_id, message):
+        if not self._connected:
+            return False
+        targets = self._session_store.get_notification_targets()
+        if not any(
+            t["sender_id"] == chat_id
+            and t["channel_type"] == channel
+            and t["preferred_notification_channel"] == channel
+            for t in targets
+        ):
+            return False
+        return self._send_notification(channel, chat_id, message)
+
     def _send_notification(
         self,
         channel_type: str,
         sender_id: str,
         message: str,
-    ) -> None:
+    ) -> bool:
         ch = self._channels.get(channel_type)
         if ch is None:
             logger.warning(
                 "No adapter for notification channel %s",
                 channel_type,
             )
-            return
+            return False
         try:
-            ch.send(sender_id, message)
+            return bool(ch.send(sender_id, message))
         except Exception:
             logger.exception("Failed to send notification to %s", channel_type)
+            return False

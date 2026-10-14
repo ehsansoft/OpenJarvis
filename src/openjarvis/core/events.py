@@ -43,6 +43,7 @@ class EventType(str, Enum):
     SECURITY_BLOCK = "security_block"
     SCHEDULER_TASK_START = "scheduler_task_start"
     SCHEDULER_TASK_END = "scheduler_task_end"
+    SCHEDULER_DELIVERY_TICK = "scheduler_delivery_tick"
     BATCH_START = "batch_start"
     BATCH_END = "batch_end"
     # Phase 14 — Agent Hardening & Security

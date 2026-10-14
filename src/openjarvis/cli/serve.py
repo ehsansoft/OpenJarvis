@@ -696,6 +696,9 @@ def serve(
                 bus=bus,
                 system=system,
                 agent_manager=agent_manager,
+                outbox_path=(get_config_dir() / "notification-delivery.json")
+                if config.security.private_operations
+                else None,
             )
         except Exception as exc:
             logger.debug("ChannelBridge init skipped: %s", exc)

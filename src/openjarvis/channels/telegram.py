@@ -45,11 +45,13 @@ class TelegramChannel(BaseChannel):
         *,
         allowed_chat_ids: str = "",
         parse_mode: str = "Markdown",
+        drop_pending_updates: bool = True,
         bus: Optional[EventBus] = None,
     ) -> None:
         self._token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
         self._allowed_chat_ids = allowed_chat_ids
         self._parse_mode = parse_mode
+        self._drop_pending_updates = drop_pending_updates
         self._bus = bus
         self._handlers: List[ChannelHandler] = []
         self._status = ChannelStatus.DISCONNECTED
@@ -368,7 +370,7 @@ class TelegramChannel(BaseChannel):
                     return
 
             if not await self._run_stage_until_stopped(
-                updater.start_polling(drop_pending_updates=True),
+                updater.start_polling(drop_pending_updates=self._drop_pending_updates),
                 async_stop_event,
             ):
                 return

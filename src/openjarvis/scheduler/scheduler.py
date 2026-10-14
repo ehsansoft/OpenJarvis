@@ -226,6 +226,8 @@ class TaskScheduler:
         while not self._stop_event.is_set():
             try:
                 now = _now_iso()
+                if self._bus is not None:
+                    self._bus.publish(EventType.SCHEDULER_DELIVERY_TICK, {})
                 with self._lock:
                     due = self._store.get_due_tasks(now)
                 for task_dict in due:
@@ -252,6 +254,11 @@ class TaskScheduler:
                 raise ValueError("Only active tasks can run")
             if due_only and (not task.next_run or task.next_run > _now_iso()):
                 return
+            if due_only and task.metadata.get("misfire_policy") == "skip":
+                due = datetime.fromisoformat(task.next_run)
+                late = (datetime.now(timezone.utc) - due).total_seconds()
+                if late > int(task.metadata.get("grace_seconds", 900)):
+                    task.metadata["_skip_late"] = True
             self._execute_task(task)
 
     def _execute_task(self, task: ScheduledTask) -> None:
@@ -270,7 +277,11 @@ class TaskScheduler:
         error_text = ""
 
         try:
-            if self._system is not None:
+            if task.metadata.get("_skip_late"):
+                raise RuntimeError("Task skipped: its approved grace window expired")
+            if (task.metadata or {}).get("action") == "reminder":
+                result_text = task.prompt
+            elif self._system is not None:
                 raw_tools = (
                     task.tools
                     if isinstance(task.tools, list)
@@ -343,6 +354,8 @@ class TaskScheduler:
                     "error": error_text,
                     "name": task.id,
                     "notify": (task.metadata or {}).get("notify"),
+                    "run_id": f"{task.id}:{started_at}",
+                    "action": (task.metadata or {}).get("action"),
                 },
             )
 

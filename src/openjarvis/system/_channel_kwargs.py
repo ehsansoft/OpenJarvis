@@ -6,7 +6,10 @@ from typing import Any, Callable, Dict, Optional
 
 
 def _telegram(c: Any) -> Dict[str, Any]:
-    kw: Dict[str, Any] = {"allowed_chat_ids": c.allowed_chat_ids}
+    kw: Dict[str, Any] = {
+        "allowed_chat_ids": c.allowed_chat_ids,
+        "drop_pending_updates": c.drop_pending_updates,
+    }
     if c.bot_token:
         kw["bot_token"] = c.bot_token
     if c.parse_mode:
