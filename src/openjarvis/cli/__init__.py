@@ -195,6 +195,9 @@ if not _DATA_BOUNDARY_BOOTSTRAP:
             "deep-research command unavailable: %s", _dr_exc
         )
     cli.add_command(self_update, "self-update")
+    from openjarvis.cli.model_lab_cmd import model_lab
+
+    cli.add_command(model_lab)
     cli.add_command(bootstrap_cmd, "_bootstrap")
 
     # Gateway CLI commands (lazy import to avoid pulling starlette)
