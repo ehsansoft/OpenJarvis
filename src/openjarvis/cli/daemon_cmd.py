@@ -270,13 +270,10 @@ def start(
     spawn_kwargs: dict = {}
     if sys.platform == "win32":
         spawn_kwargs["creationflags"] = (
-            (
-                subprocess.CREATE_NO_WINDOW
-                if executable != sys.executable
-                else subprocess.DETACHED_PROCESS
-            )
-            | subprocess.CREATE_NEW_PROCESS_GROUP
-        )
+            subprocess.CREATE_NO_WINDOW
+            if executable != sys.executable
+            else subprocess.DETACHED_PROCESS
+        ) | subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         spawn_kwargs["start_new_session"] = True
     launch_token = secrets.token_hex(16)
