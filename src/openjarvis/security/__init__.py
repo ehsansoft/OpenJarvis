@@ -32,6 +32,8 @@ def setup_security(
     Returns a SecurityContext. No-ops if config.security.enabled is False.
     """
     if not config.security.enabled:
+        if config.security.private_operations:
+            raise RuntimeError("Private operations require security enforcement")
         return SecurityContext(engine=engine)
 
     from openjarvis.security._stubs import BaseScanner
@@ -63,14 +65,21 @@ def setup_security(
 
     # Capability policy
     cap_policy = None
-    if config.security.capabilities.enabled:
+    if config.security.capabilities.enabled or config.security.private_operations:
         try:
             from openjarvis.security.capabilities import CapabilityPolicy
 
-            cap_policy = CapabilityPolicy(
-                policy_path=config.security.capabilities.policy_path or None,
-                default_deny=config.security.capabilities.default_deny,
-            )
+            if config.security.private_operations:
+                from openjarvis.security.personal_policy import (
+                    private_operations_policy,
+                )
+
+                cap_policy = private_operations_policy()
+            else:
+                cap_policy = CapabilityPolicy(
+                    policy_path=config.security.capabilities.policy_path or None,
+                    default_deny=config.security.capabilities.default_deny,
+                )
             # No explicit policy file: grant a conservative baseline to the
             # "_default" wildcard agent so default-deny doesn't silently
             # break every managed agent (whose UUIDs aren't known ahead of
@@ -79,6 +88,7 @@ def setup_security(
             if (
                 config.security.capabilities.default_deny
                 and not config.security.capabilities.policy_path
+                and not config.security.private_operations
             ):
                 for cap in (
                     "file:read",

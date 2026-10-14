@@ -1315,6 +1315,7 @@ class TelegramChannelConfig:
     bot_token: str = ""
     allowed_chat_ids: str = ""
     parse_mode: str = "Markdown"
+    drop_pending_updates: bool = True  # Personal setup explicitly chooses replay.
 
 
 @dataclass(slots=True)
@@ -1508,6 +1509,7 @@ class SecurityConfig:
     local_engine_bypass: bool = False
     local_tool_bypass: bool = False
     profile: str = ""
+    private_operations: bool = False  # Explicit read-only local operations policy.
     vault_key_path: str = field(
         default_factory=lambda: str(get_config_dir() / ".vault_key")
     )

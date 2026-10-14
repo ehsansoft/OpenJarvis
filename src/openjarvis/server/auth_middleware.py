@@ -87,6 +87,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """
         return (
             path.startswith("/v1/")
+            or path == "/router/v1"
+            or path.startswith("/router/v1/")
             or path.startswith("/api/")
             or path == "/metrics"
             or path.startswith("/metrics/")
