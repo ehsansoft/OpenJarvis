@@ -105,7 +105,7 @@ class OllamaEmbedder(Embedder):
         """Issue one HTTP request for ``texts`` and return raw vectors."""
         resp = self._httpx.post(
             f"{self._base_url}/api/embed",
-            json={"model": self._model, "input": texts},
+            json={"model": self._model, "input": texts, "truncate": False},
             timeout=self._timeout_s,
             trust_env=self._trust_env,
         )
@@ -172,6 +172,12 @@ class OllamaEmbedder(Embedder):
             vecs = self._embed_batch(["probe"])
             self._dim_cached = len(vecs[0])
         return self._dim_cached
+
+    def embed_documents(self, texts):
+        return self.embed(["search_document: " + text for text in texts])
+
+    def embed_queries(self, texts):
+        return self.embed(["search_query: " + text for text in texts])
 
 
 __all__ = ["Embedder", "OllamaEmbedder", "SentenceTransformerEmbedder"]
