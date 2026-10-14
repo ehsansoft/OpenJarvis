@@ -273,7 +273,12 @@ def audit(source, category, cache_path):
     importer = SkillImporter(SkillParser(), ToolTranslator())
     skills = resolver.list_skills()
     if category:
-        skills = [entry for entry in skills if entry.category == category]
+        categories = {
+            "coding": {"coding", "software-development"},
+            "research": {"research"},
+            "productivity": {"productivity"},
+        }
+        skills = [entry for entry in skills if entry.category in categories[category]]
     reports = []
     for entry in skills:
         try:

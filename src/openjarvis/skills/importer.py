@@ -32,29 +32,30 @@ from openjarvis.skills.security import (
     has_dangerous_capabilities,
 )
 from openjarvis.skills.sources.base import ResolvedSkill
-from openjarvis.skills.tool_translator import ToolTranslator
+from openjarvis.skills.tool_translator import ToolTranslator, declared_tools
 
 # Subdirectories of a skill that are always copied (never gated by --with-scripts)
 COPIED_SUBDIRS = ("references", "assets", "templates")
 
 
 def _dangerous_tools(frontmatter, manifest):
-    declared = frontmatter.get("allowed-tools", [])
-    if isinstance(declared, str):
-        declared = declared.replace(",", " ").split()
+    declared = declared_tools(frontmatter.get("allowed-tools", []))
     capabilities = {
         "Bash": "shell:execute",
         "shell_exec": "shell:execute",
+        "terminal": "shell:execute",
         "Write": "filesystem:write",
         "Edit": "filesystem:write",
         "file_write": "filesystem:write",
         "file_edit": "filesystem:write",
+        "write_file": "filesystem:write",
+        "apply_patch": "filesystem:write",
     }
     return sorted(
         {
-            capabilities[t]
+            capabilities[t.split("(", 1)[0]]
             for t in [*declared, *(s.tool_name for s in manifest.steps)]
-            if t in capabilities
+            if t.split("(", 1)[0] in capabilities
         }
     )
 
@@ -191,8 +192,32 @@ class SkillImporter:
             )
             return result
 
+        executable_resources = [
+            p
+            for subdir in COPIED_SUBDIRS
+            for p in (resolved.path / subdir).rglob("*")
+            if p.is_file()
+            and p.suffix.lower()
+            in {".py", ".ps1", ".sh", ".bat", ".cmd", ".exe", ".js"}
+        ]
+        if executable_resources and not (with_scripts and confirm_dangerous):
+            result.success = False
+            result.requires_confirmation = True
+            result.warnings.append(
+                (
+                    "Executable resources outside scripts/ require script and dan"
+                    "gerous-capability review"
+                )
+            )
+            return result
+
         translated_body, untranslated = self._translator.translate_markdown(body)
-        result.untranslated_tools = untranslated
+        metadata_tools, metadata_missing = self._translator.translate_allowed_tools(
+            " ".join(declared_tools(frontmatter.get("allowed-tools", [])))
+        )
+        if "allowed-tools" in frontmatter:
+            frontmatter["allowed-tools"] = metadata_tools
+        result.untranslated_tools = sorted(set(untranslated + metadata_missing))
         # Compute the list of translations actually applied
         applied: List[str] = []
         for ext, internal in self._translator._table.items():
@@ -235,6 +260,17 @@ class SkillImporter:
         frontmatter, body = self._read_skill_md(resolved.path / "SKILL.md")
         manifest = self._parser.parse_frontmatter(frontmatter, markdown_content=body)
         translated_body, missing = self._translator.translate_markdown(body)
+        metadata_tools, metadata_missing = self._translator.translate_allowed_tools(
+            " ".join(declared_tools(frontmatter.get("allowed-tools", [])))
+        )
+        resource_executables = [
+            str(p.relative_to(resolved.path))
+            for folder in (*COPIED_SUBDIRS, "scripts")
+            for p in (resolved.path / folder).rglob("*")
+            if p.is_file()
+            and p.suffix.lower()
+            in {".py", ".ps1", ".sh", ".bat", ".cmd", ".exe", ".js"}
+        ]
         applied = [
             f"{external}->{internal}"
             for external, internal in self._translator._table.items()
@@ -244,7 +280,10 @@ class SkillImporter:
             "name": resolved.name,
             "category": resolved.category,
             "translated_tools": applied,
-            "untranslated_tools": missing,
+            "untranslated_tools": sorted(set(missing + metadata_missing)),
+            "translated_allowed_tools": metadata_tools,
+            "resource_executables": resource_executables,
+            "compatible": not (missing or metadata_missing or resource_executables),
             "dangerous_capabilities": sorted(
                 set(
                     has_dangerous_capabilities(manifest)

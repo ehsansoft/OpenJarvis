@@ -25,11 +25,36 @@ TOOL_TRANSLATION: Dict[str, str] = {
     "Edit": "file_edit",
     "Glob": "file_glob",
     "Grep": "file_grep",
-    "WebFetch": "web_search",
     "WebSearch": "web_search",
     "Task": "delegate_agent",
     "NotebookEdit": "notebook_edit",
 }
+
+ADAPTED_TOOLS = {"terminal": "shell_exec", "read_file": "file_read"}
+KNOWN_INTERNAL_TOOLS = set(TOOL_TRANSLATION.values()) | {
+    "memory_search",
+    "retrieval",
+    "web_search",
+    "think",
+    "calculator",
+    "git_status",
+    "git_diff",
+    "machine_inventory",
+    "drive_inventory",
+    "project_registry",
+    "apply_patch",
+}
+
+
+def declared_tools(value):
+    """Normalize string/list declarations while retaining scoped arguments."""
+    values = value if isinstance(value, list) else [value]
+    return [
+        token
+        for item in values
+        if isinstance(item, str)
+        for token in re.findall(r"[^\s,()]+(?:\([^)]*\))?", item)
+    ]
 
 
 class ToolTranslator:
@@ -76,9 +101,12 @@ class ToolTranslator:
         untranslated: List[str] = []
         # Require at least one uppercase letter after position 0 (true CamelCase)
         candidate_pattern = re.compile(r"\b([A-Z][a-z]+[A-Z][a-zA-Z]*)(?:\s+tool|\b)")
-        for cand in candidate_pattern.findall(body):
+        candidates = candidate_pattern.findall(body) + re.findall(
+            r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", body
+        )
+        for cand in candidates:
             if cand not in self._table and cand not in untranslated:
-                if 3 <= len(cand) <= 30:
+                if 3 <= len(cand) <= 60 and cand not in KNOWN_INTERNAL_TOOLS:
                     untranslated.append(cand)
         return new_body, untranslated
 
@@ -93,7 +121,7 @@ class ToolTranslator:
 
         out_tokens: List[str] = []
         untranslated: List[str] = []
-        for token in allowed.split():
+        for token in declared_tools(allowed):
             # Split off any (args) suffix
             if "(" in token:
                 head, _, tail = token.partition("(")
