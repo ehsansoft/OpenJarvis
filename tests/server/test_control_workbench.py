@@ -274,7 +274,11 @@ def test_task_needs_future_time_and_explicit_offset(workbench, run_at):
 
 def test_instruction_and_changed_skills_cannot_execute(workbench):
     client, system, _, _ = workbench
-    assert len(client.get("/v1/control/skills").json()["skills"]) == 3
+    skills = client.get("/v1/control/skills").json()["skills"]
+    assert len(skills) >= 3
+    assert all(
+        not skill["runnable"] for skill in skills if skill["kind"] == "instructions"
+    )
     assert (
         client.post("/v1/control/skills/private-project-plan/run", json={}).status_code
         == 403

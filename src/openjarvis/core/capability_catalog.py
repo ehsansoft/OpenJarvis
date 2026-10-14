@@ -188,6 +188,9 @@ def discover_nara(config: JarvisConfig, root: Path, timeout: float) -> list[str]
     from openjarvis.engine.nararouter import NaraRouterEngine
 
     key = os.environ.get("NARAROUTER_API_KEY", "")
+    from openjarvis.core.integration_secrets import IntegrationSecretStore
+
+    key = IntegrationSecretStore(root).get("nararouter") or key
     if not key:
         try:
             with (root / "credentials.toml").open("rb") as handle:
@@ -256,6 +259,7 @@ def catalog_context_sha256(config: JarvisConfig, model_metadata: list) -> str:
                 "allowed_chat_ids": config.channel.telegram.allowed_chat_ids,
                 "private_routing": config.intelligence.private_routing,
                 "allow_private_remote": config.intelligence.allow_private_remote,
+                "private_operations": config.security.private_operations,
             },
             sort_keys=True,
         ).encode()
@@ -755,6 +759,7 @@ def build_catalog(
         "Scheduler",
         configured=config.scheduler.enabled,
         accepted=passed("scheduler_real_local_execution"),
+        blocked=api_health is None,
         reason=(
             "Server-owned scheduler; synthetic execution acceptance "
             "does not enable personal recurring jobs."

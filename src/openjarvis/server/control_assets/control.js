@@ -117,6 +117,7 @@ async function openView(view) {
   $("#breadcrumb").textContent = view.charAt(0).toUpperCase() + view.slice(1);
   history.replaceState(null, "", `#${view}`);
   if (view === "skills") await guarded(loadSkills);
+  if (view === "setup") await guarded(loadSetup);
   if (view === "capabilities") await guarded(loadCapabilities);
   if (view === "tasks") await guarded(loadTasks);
   if (view === "projects") {
@@ -311,6 +312,7 @@ function renderCapabilities() {
     card.append(
       badge(capability.status),
       element("h2", capability.display_name),
+      element("p", capability.what_it_does || capability.display_name),
       element("p", capability.reason, "muted small"),
       element("p", `Next: ${capability.next_action}`, "small"),
     );
@@ -518,7 +520,7 @@ async function loadTasks() {
           `/v1/control/tasks/${encodeURIComponent(task.id)}/logs`,
         );
         $("#task-log-card").hidden = false;
-        $("#task-log").textContent = JSON.stringify(result.logs, null, 2);
+        $("#task-log").textContent = JSON.stringify(result, null, 2);
       }),
     );
     if (["active", "paused"].includes(task.status)) {
@@ -599,13 +601,15 @@ $("#task-form").addEventListener("submit", (event) => {
       !(await confirmAction(
         "Create this one-shot task?",
         prompt,
-        `Local: ${date.toLocaleString()}\nStored UTC: ${date.toISOString()}\nRead-only local tools. No recurring job or Telegram notification.`,
+        `Local: ${date.toLocaleString()}\nStored UTC: ${date.toISOString()}\nKind: ${$("#task-kind").value}\nTelegram: ${$("#task-notify-chat").value || "off"}\nNo recurring job.`,
       ))
     )
       return;
     const task = await api("/v1/control/tasks", {
       prompt,
       run_at: date.toISOString(),
+      kind: $("#task-kind").value,
+      notify_chat: $("#task-notify-chat").value.trim(),
     });
     activity(`Created one-shot task ${task.id}`);
     toast("Task scheduled");
@@ -685,3 +689,241 @@ openView(
 );
 refresh();
 setInterval(refresh, 15000);
+
+async function loadSetup() {
+  const settings = await api("/v1/control/setup");
+  $("#telegram-setup-status").textContent =
+    `${settings.credentials.telegram ? "Token saved" : "Token needed"} · ${settings.telegram_enabled ? "Bot enabled" : "Bot disabled"} · ${settings.private_operations ? "Private permissions active" : "Private permissions need setup"}`;
+  $("#telegram-chat-ids").value = settings.allowed_chat_ids || "";
+  const knowledge = await api("/v1/control/knowledge");
+  $("#knowledge-status").textContent =
+    `Search mode: ${knowledge.mode}. ${knowledge.chunks || 0} derived vector chunks.`;
+  const sources = $("#knowledge-sources");
+  sources.replaceChildren();
+  for (const source of knowledge.sources) {
+    const label = element("label", source.name);
+    const input = element("input");
+    input.type = "checkbox";
+    input.value = source.id;
+    input.checked = source.id === "runbook";
+    label.prepend(input);
+    sources.append(label);
+  }
+  const providers = $("#provider-setup");
+  providers.replaceChildren();
+  for (const [id, label] of [
+    ["nararouter", "Nara API key"],
+    ["tavily", "Tavily search key"],
+    ["youcom", "You.com search key"],
+    ["serply", "Serply search key"],
+  ]) {
+    const form = element("form");
+    const input = element("input");
+    input.type = "password";
+    input.autocomplete = "off";
+    input.required = true;
+    input.placeholder = label;
+    const name = element(
+      "label",
+      `${label} · ${settings.credentials[id] ? "saved" : "optional"}`,
+    );
+    name.append(input);
+    const save = element("button", "Save securely", "secondary");
+    save.type = "submit";
+    form.append(name, save);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = input.value;
+      input.value = "";
+      guarded(async () => {
+        await api(`/v1/control/setup/credentials/${id}`, { value });
+        toast("Saved securely. Restart Jarvis to refresh this connection.");
+        await loadSetup();
+      });
+    });
+    providers.append(form);
+  }
+  const workflows = await api("/v1/control/workflows");
+  const target = $("#guided-workflows");
+  target.replaceChildren();
+  for (const workflow of workflows.workflows) {
+    const card = element("article", undefined, "notebook-entry");
+    card.append(
+      element("h3", workflow.title),
+      element("p", workflow.description),
+      element("small", workflow.requirements),
+    );
+    card.append(
+      button("Try in private chat", async () => {
+        await openView("chat");
+        $("#chat-input").value = workflow.prompt;
+        $("#chat-input").focus();
+      }),
+    );
+    target.append(card);
+  }
+}
+$("#telegram-secret-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const value = $("#telegram-token").value;
+  $("#telegram-token").value = "";
+  guarded(async () => {
+    await api("/v1/control/setup/credentials/telegram", { value });
+    toast("Token saved securely. Verify it next.");
+    await loadSetup();
+  });
+});
+$("#telegram-verify").addEventListener("click", () =>
+  guarded(async () => {
+    const bot = await api("/v1/control/setup/telegram/verify", {});
+    $("#telegram-setup-status").textContent =
+      `Verified @${bot.username}. Send this bot /start, then find your chat ID.`;
+  }),
+);
+$("#telegram-discover").addEventListener("click", () =>
+  guarded(async () => {
+    const data = await api("/v1/control/setup/telegram/discover-chats", {});
+    const target = $("#telegram-chat-options");
+    target.replaceChildren();
+    for (const chat of data.chats)
+      target.append(
+        button(`Use ${chat.id} (${chat.type})`, async () => {
+          $("#telegram-chat-ids").value = chat.id;
+        }),
+      );
+    if (!data.chats.length)
+      empty(target, "Send your bot /start, then try again.");
+  }),
+);
+$("#telegram-chats-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  guarded(async () => {
+    await api("/v1/control/setup/telegram/chats", {
+      chat_ids: $("#telegram-chat-ids").value,
+    });
+    toast("Allowed chats saved. You can now enable the bot.");
+  });
+});
+for (const action of ["enable", "disable"])
+  $("#telegram-" + action).addEventListener("click", () =>
+    guarded(async () => {
+      if (
+        !(await confirmAction(
+          `${action === "enable" ? "Enable" : "Disable"} Telegram?`,
+          "Save this setting and restart the single Jarvis server.",
+          action === "enable"
+            ? "One bot poller. Only selected chats. No recurring task is created."
+            : "Stop the owned bot after restart.",
+        ))
+      )
+        return;
+      await api("/v1/control/setup/telegram/state/" + action, {});
+      await api("/v1/control/services/jarvis/restart", {
+        confirm: "restart-jarvis",
+      });
+      toast("Restarting Jarvis. Reconnect in a few seconds.");
+    }),
+  );
+$("#telegram-test").addEventListener("click", () =>
+  guarded(async () => {
+    if (
+      !(await confirmAction(
+        "Send a Telegram test?",
+        "Send one generic connection message to your first allowed chat.",
+        "No private project text or recurring task.",
+      ))
+    )
+      return;
+    const result = await api(
+      "/v1/control/setup/telegram/test-notification",
+      {},
+    );
+    toast(
+      result.sent
+        ? "Sent. Check Telegram for the test message."
+        : "Delivery failed. Check bot status.",
+    );
+  }),
+);
+$("#knowledge-preview").addEventListener("click", () =>
+  guarded(async () => {
+    const sources = [
+      ...document.querySelectorAll("#knowledge-sources input:checked"),
+    ].map((x) => x.value);
+    state.knowledgePreview = await api("/v1/control/knowledge/preview", {
+      sources,
+    });
+    $("#knowledge-plan").textContent = JSON.stringify(
+      state.knowledgePreview,
+      null,
+      2,
+    );
+    $("#knowledge-index").hidden = false;
+  }),
+);
+$("#knowledge-index").addEventListener("click", () =>
+  guarded(async () => {
+    const plan = state.knowledgePreview;
+    if (
+      !plan ||
+      !(await confirmAction(
+        "Index these selected documents?",
+        plan.sources.map((x) => x.path).join("\n"),
+        plan.writes + " All embeddings remain local.",
+      ))
+    )
+      return;
+    const result = await api(
+      "/v1/control/knowledge/index",
+      {
+        sources: plan.sources.map((x) => x.id),
+        preview_sha256: plan.preview_sha256,
+        approved: true,
+      },
+      240000,
+    );
+    $("#knowledge-status").textContent =
+      `Indexed ${result.chunks} chunks. Search mode: ${result.mode}.`;
+    $("#knowledge-index").hidden = true;
+  }),
+);
+
+$("#public-research-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  guarded(async () => {
+    const query = $("#public-research-query").value.trim();
+    if (
+      !(await confirmAction(
+        "Send this public query?",
+        query,
+        "External search and potentially Nara inference. No private memory, files or chat history are attached.",
+      ))
+    )
+      return;
+    $("#public-research-result").textContent = "Searching public sources…";
+    const result = await api(
+      "/v1/control/public-research",
+      { query, approved_public: true },
+      240000,
+    );
+    $("#public-research-result").textContent =
+      result.content +
+      (result.sources ? "\n\nSources:\n" + result.sources : "");
+  });
+});
+
+$("#run-model-lab").addEventListener("click", () =>
+  guarded(async () => {
+    if (
+      !(await confirmAction(
+        "Run local model checks?",
+        "Eight small synthetic checks across your installed general and coding models. This can take several minutes.",
+        "Sequential local inference, no tools or generated code execution, no downloads.",
+      ))
+    )
+      return;
+    $("#model-lab-result").textContent = "Evaluating locally…";
+    const report = await api("/v1/control/model-lab", {}, 900000);
+    $("#model-lab-result").textContent = JSON.stringify(report, null, 2);
+  }),
+);

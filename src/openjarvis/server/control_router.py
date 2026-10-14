@@ -172,8 +172,35 @@ async def overview(request: Request):
 @router.get("/v1/control/capabilities")
 def capabilities(request: Request):
     from openjarvis.core.capability_catalog import build_catalog
+    from openjarvis.server.workflow_guides import EXPLANATIONS
 
-    return build_catalog(request.app.state.config, get_config_dir(), timeout=2)
+    report = build_catalog(request.app.state.config, get_config_dir(), timeout=2)
+    for capability in report["capabilities"]:
+        capability["what_it_does"] = EXPLANATIONS.get(
+            capability["id"], capability["display_name"]
+        )
+    return report
+
+
+@router.get("/v1/control/workflows")
+def workflows():
+    from openjarvis.server.workflow_guides import WORKFLOWS
+
+    return {"workflows": WORKFLOWS}
+
+
+@router.post("/v1/control/model-lab")
+def model_lab(request: Request):
+    from openjarvis.core.model_lab import run_evaluations
+
+    system = _system(request)
+    if (
+        not system.config.intelligence.private_routing
+        or system.config.intelligence.allow_private_remote
+    ):
+        raise HTTPException(409, "Model Lab requires private local inference")
+    with request.app.state._control_chat_lock:
+        return run_evaluations(system.engine, ["local/fast", "local/code"])
 
 
 @router.get("/v1/control/projects")
@@ -268,7 +295,7 @@ class ChatRequest(BaseModel):
     history: list[Turn] = Field(default_factory=list, max_length=20)
 
 
-def _research(system, prompt):
+def _research(system, prompt, scoped_index=None):
     from openjarvis.core.types import Message, Role
     from openjarvis.engine.privacy import inference_stays_local
     from openjarvis.security.runtime import execute_secured_tool
@@ -279,8 +306,13 @@ def _research(system, prompt):
     # The memory backend owns query normalization. Do not inject FTS operators:
     # the native backend treats quoted Boolean expressions as literal text.
     query = prompt[:2000]
+    backend = system.memory_backend
+    if scoped_index is not None:
+        from openjarvis.memory.scoped_index import ScopedSearch
+
+        backend = ScopedSearch(backend, scoped_index)
     retrieval = execute_secured_tool(
-        RetrievalTool(system.memory_backend),
+        RetrievalTool(backend),
         {"query": query, "top_k": 3},
         bus=system.bus,
         capability_policy=system.capability_policy,
@@ -346,7 +378,9 @@ def chat(body: ChatRequest, request: Request):
         raise HTTPException(503, "Server is restarting")
     with request.app.state._control_chat_lock:
         if body.mode == "research":
-            return _research(system, body.prompt)
+            from openjarvis.server.knowledge_router import owned_index
+
+            return _research(system, body.prompt, owned_index(request))
         result = system.ask(
             body.prompt,
             agent="orchestrator",
@@ -376,6 +410,10 @@ def tasks(request: Request):
 class TaskRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
     run_at: datetime
+    kind: Literal["prompt", "reminder"] = "prompt"
+    notify_chat: str = Field(default="", max_length=30)
+    misfire_policy: Literal["run_once", "skip"] = "run_once"
+    grace_seconds: int = Field(default=900, ge=60, le=86400)
 
 
 @router.post("/v1/control/tasks")
@@ -388,6 +426,18 @@ def create_task(body: TaskRequest, request: Request):
         raise HTTPException(409, "Local tasks require fail-closed personal routing")
     if body.run_at.tzinfo is None or body.run_at <= datetime.now(timezone.utc):
         raise HTTPException(422, "Choose a future time with an explicit UTC offset")
+    metadata = {"source": "local-dashboard", "timezone": "Asia/Tehran"}
+    metadata.update(
+        misfire_policy=body.misfire_policy, grace_seconds=body.grace_seconds
+    )
+    if body.kind == "reminder":
+        metadata["action"] = "reminder"
+    if body.notify_chat:
+        cfg = system.config
+        allowed = {x.strip() for x in cfg.channel.telegram.allowed_chat_ids.split(",")}
+        if not cfg.channel.enabled or body.notify_chat not in allowed:
+            raise HTTPException(409, "Enable the bot and select an allowed chat first")
+        metadata["notify"] = {"channel": "telegram", "chat_id": body.notify_chat}
     return (
         _scheduler(request)
         .create_task(
@@ -396,7 +446,7 @@ def create_task(body: TaskRequest, request: Request):
             body.run_at.isoformat(),
             agent="orchestrator",
             tools=",".join(READ_TOOLS),
-            metadata={"source": "local-dashboard", "timezone": "UTC"},
+            metadata=metadata,
         )
         .to_dict()
     )
@@ -440,7 +490,17 @@ async def execute_task(task_id: str, request: Request):
 def task_logs(task_id: str, request: Request):
     scheduler = _scheduler(request)
     with scheduler._lock:
-        return {"logs": scheduler._store.get_run_logs(task_id, limit=10)}
+        logs = scheduler._store.get_run_logs(task_id, limit=10)
+    bridge = getattr(request.app.state, "channel_bridge", None)
+    outbox = getattr(bridge, "_outbox", None)
+    return {
+        "logs": logs,
+        "delivery": [
+            r for r in outbox.records() if r["run_id"].startswith(task_id + ":")
+        ]
+        if outbox
+        else [],
+    }
 
 
 def _spawn(command, log_path, env):
@@ -542,3 +602,14 @@ def initialize_control(app):
     app.state._control_lock = threading.Lock()
     app.state._control_chat_lock = threading.Lock()
     app.include_router(router)
+    from openjarvis.server.setup_router import initialize_setup
+
+    initialize_setup(app)
+    from openjarvis.server.knowledge_router import router as knowledge_router
+
+    app.include_router(knowledge_router)
+    from openjarvis.server.public_research_router import (
+        router as public_research_router,
+    )
+
+    app.include_router(public_research_router)

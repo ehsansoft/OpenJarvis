@@ -27,6 +27,7 @@
         <button data-view="services"><span>▤</span> Servers</button>
         <button data-view="skills"><span>✳</span> Skills</button>
         <button data-view="capabilities"><span>◇</span> Capabilities</button>
+        <button data-view="setup"><span>⚙</span> Setup & connections</button>
       </nav>
       <div class="sidebar-footer">
         <span class="status-dot"></span> Local workspace<small
@@ -378,6 +379,11 @@ uv run --no-sync jarvis start</pre
               <h2>Schedule a local prompt</h2>
               <form id="task-form">
                 <label for="task-prompt">What should Jarvis do?</label
+                ><select id="task-kind">
+                  <option value="prompt">Local model prompt</option>
+                  <option value="reminder">
+                    Simple reminder · no model needed
+                  </option></select
                 ><textarea
                   id="task-prompt"
                   rows="4"
@@ -389,9 +395,14 @@ uv run --no-sync jarvis start</pre
                   >Run once · your browser's local time</label
                 ><input id="task-time" type="datetime-local" required />
                 <p class="muted small">
-                  Uses read-only tools. No Telegram notification or recurring
-                  automation is enabled here.
+                  Prompts use read-only tools. Reminders repeat your chosen
+                  text. Recurring jobs stay separate.
                 </p>
+                <label
+                  >Optional Telegram destination<input
+                    id="task-notify-chat"
+                    placeholder="Allowed chat ID; leave empty for local only"
+                /></label>
                 <button class="primary" type="submit">Review task ↗</button>
               </form>
             </article>
@@ -421,6 +432,151 @@ uv run --no-sync jarvis start</pre
           <button id="more-projects" class="secondary" hidden>
             Next projects →
           </button>
+        </section>
+        <section data-panel="setup" hidden>
+          <div class="section-heading">
+            <div>
+              <div class="eyebrow">GET CONNECTED</div>
+              <h1>Setup & connections</h1>
+              <p>Add what Jarvis needs, one connection at a time.</p>
+            </div>
+          </div>
+          <div class="overview-grid">
+            <article class="card">
+              <h2>Telegram bot</h2>
+              <p>
+                Chat with Jarvis or receive a reminder in Telegram. Messages
+                travel through Telegram; keep private project text in the local
+                desk.
+              </p>
+              <ol>
+                <li>
+                  Create a bot with <strong>@BotFather</strong> using /newbot.
+                </li>
+                <li>Save its token below, then verify it.</li>
+                <li>
+                  Send your bot /start. Discover and select your own chat ID.
+                </li>
+                <li>
+                  Enable the bot and restart Jarvis. Send /notify telegram to
+                  opt in.
+                </li>
+              </ol>
+              <form id="telegram-secret-form">
+                <label
+                  >BotFather token<input
+                    id="telegram-token"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Paste token here; it is never displayed again"
+                    required /></label
+                ><button type="submit" class="primary">
+                  Save token securely
+                </button>
+              </form>
+              <p id="telegram-setup-status" role="status">
+                Checking connection settings…
+              </p>
+              <div class="actions">
+                <button class="secondary" id="telegram-verify">
+                  Verify bot</button
+                ><button class="secondary" id="telegram-discover">
+                  Find my chat ID
+                </button>
+              </div>
+              <div id="telegram-chat-options"></div>
+              <form id="telegram-chats-form">
+                <label
+                  >Allowed chat IDs<input
+                    id="telegram-chat-ids"
+                    placeholder="Your numeric ID; commas for additional chats"
+                    required /></label
+                ><button class="secondary" type="submit">
+                  Save allowed chats
+                </button>
+              </form>
+              <div class="actions">
+                <button class="primary" id="telegram-enable">
+                  Enable bot & restart</button
+                ><button class="secondary" id="telegram-disable">
+                  Disable bot & restart</button
+                ><button class="secondary" id="telegram-test">
+                  Send one test notification
+                </button>
+              </div>
+              <p class="muted">
+                Saving a token does not enable polling, messages or recurring
+                tasks. Tokens are encrypted for your Windows account in local
+                state.
+              </p>
+            </article>
+            <article class="card">
+              <h2>Models and public research</h2>
+              <p>
+                Your installed local models need no API key: a small general
+                model, a coding model and a text embedder.
+              </p>
+              <p>
+                Nara can provide additional free models for public research.
+                Search-provider keys are optional upgrades.
+              </p>
+              <div id="provider-setup"></div>
+              <button class="secondary" id="run-model-lab">
+                Review and run local model checks
+              </button>
+              <pre id="model-lab-result"></pre>
+            </article>
+          </div>
+          <article class="card">
+            <h2>Public research</h2>
+            <p>
+              Search public information and summarize with the free model pool.
+              This sends the exact query to external services, without private
+              memory or chat history.
+            </p>
+            <form id="public-research-form">
+              <label
+                >Public query<textarea
+                  id="public-research-query"
+                  maxlength="1500"
+                  required
+                  placeholder="A public topic, without private project excerpts"
+                ></textarea></label
+              ><button class="secondary" type="submit">
+                Review outbound query
+              </button>
+            </form>
+            <pre id="public-research-result"></pre>
+          </article>
+          <article class="card">
+            <h2>Local knowledge</h2>
+            <p>
+              Review selected Jarvis documents before adding local semantic
+              search. This does not scan projects or change the project
+              registry.
+            </p>
+            <div id="knowledge-sources"></div>
+            <button class="secondary" id="knowledge-preview">
+              Preview selected sources
+            </button>
+            <pre id="knowledge-plan"></pre>
+            <button class="primary" id="knowledge-index" hidden>
+              Approve and index these sources
+            </button>
+            <p id="knowledge-status" role="status"></p>
+          </article>
+          <article class="card">
+            <h2>Skills and capabilities, explained</h2>
+            <p>
+              A <strong>capability</strong> is an ability: searching notes,
+              reading inventory or sending a notification. A
+              <strong>skill</strong> is a recipe that uses those abilities:
+              reviewing your week or investigating a bug. A recipe does not
+              grant permission to edit or send anything.
+            </p>
+            <div id="guided-workflows" class="quick-grid"></div>
+          </article>
         </section>
       </main>
       <footer class="main-footer">

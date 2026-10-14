@@ -939,3 +939,11 @@ dialog input {
     line-height: 1.6;
   }
 }
+
+input[type="checkbox"] {
+  width: auto;
+  margin-right: 10px;
+}
+[data-panel="setup"] form {
+  margin: 16px 0;
+}

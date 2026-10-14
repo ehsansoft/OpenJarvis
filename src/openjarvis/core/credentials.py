@@ -195,6 +195,9 @@ def inject_credentials(path: Path | None = None) -> None:
         for k, v in kvs.items():
             if k not in os.environ:
                 os.environ[k] = v
+    from openjarvis.core.integration_secrets import IntegrationSecretStore
+
+    IntegrationSecretStore(path.parent if path else None).inject()
 
 
 def get_tool_credential(
@@ -208,6 +211,13 @@ def get_tool_credential(
     Falls back to ``os.environ`` if the key is not in credentials.toml,
     for backward compatibility with Docker env var workflows.
     """
+    from openjarvis.core.integration_secrets import SECRET_KEYS, IntegrationSecretStore
+
+    provider = next((p for p, name in SECRET_KEYS.items() if name == key), None)
+    if provider:
+        value = IntegrationSecretStore(path.parent if path else None).get(provider)
+        if value:
+            return value
     creds = load_credentials(path=path)
     tool_creds = creds.get(tool_name, {})
     value = tool_creds.get(key)
