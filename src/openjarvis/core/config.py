@@ -1632,6 +1632,14 @@ class SchedulerConfig:
 
 
 @dataclass(slots=True)
+class TeamConfig:
+    """Named roster and collaborative task board settings."""
+
+    roster_db_path: str = ""  # Defaults to ~/.openjarvis/team.db
+    claim_ttl_seconds: int = 900
+
+
+@dataclass(slots=True)
 class WorkflowConfig:
     """Workflow engine settings."""
 
@@ -1840,6 +1848,7 @@ class JarvisConfig:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    team: TeamConfig = field(default_factory=TeamConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     sessions: SessionConfig = field(default_factory=SessionConfig)
     a2a: A2AConfig = field(default_factory=A2AConfig)
@@ -2160,6 +2169,7 @@ def load_config(path: Optional[Path] = None) -> JarvisConfig:
             "projects",
             "sandbox",
             "scheduler",
+            "team",
             "workflow",
             "sessions",
             "a2a",
