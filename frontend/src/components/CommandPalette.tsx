@@ -6,6 +6,8 @@ import {
   deleteModel,
   fetchModels,
   preloadModel,
+  isPoolAlias,
+  isRemoteEngineModel,
   isTauri,
   getCloudKeyStatus,
   saveCloudKey,
@@ -395,7 +397,7 @@ export function CommandPalette() {
                         </span>
                       )}
                     </button>
-                    {model.owned_by !== 'litellm' && (
+                    {model.owned_by !== 'litellm' && !isPoolAlias(model.id) && !isRemoteEngineModel(model.id) && (
                       <button
                         onClick={() => handleDelete(model.id)}
                         disabled={isDeleting}

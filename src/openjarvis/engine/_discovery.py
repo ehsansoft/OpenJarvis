@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 # Map registry keys to config host attribute (None = no host arg)
 _BUILTIN_ENGINE_TARGETS: dict[str, tuple[str, str]] = {
     "nararouter": ("openjarvis.engine.nararouter", "NaraRouterEngine"),
+    "kilogateway": ("openjarvis.engine.kilogateway", "KiloGatewayEngine"),
+    "opencode": ("openjarvis.engine.opencode", "OpenCodeEngine"),
     "nim": ("openjarvis.engine.nim", "NIMEngine"),
     "ollama": ("openjarvis.engine.ollama", "OllamaEngine"),
     "vllm": ("openjarvis.engine.openai_compat_engines", "VLLMEngine"),
@@ -87,6 +89,20 @@ def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
         return cls(
             host=cfg.host or None,
             free_only=cfg.free_only,
+        )
+
+    if key == "kilogateway":
+        cfg = config.engine.kilogateway
+        return cls(
+            host=cfg.host or None,
+            free_only=cfg.free_only,
+        )
+
+    if key == "opencode":
+        cfg = config.engine.opencode
+        return cls(
+            path=cfg.path or None,
+            timeout=cfg.timeout,
         )
 
     # gemma_cpp: pass config fields instead of host

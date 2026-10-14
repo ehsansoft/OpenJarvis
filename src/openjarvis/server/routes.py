@@ -167,13 +167,32 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         and (not request_body.stream or bool(getattr(agent, "_tools", None)))
     )
 
-    # Inject memory context into messages before dispatching
+    # Engine-owned free-gateway models (kilo/*, opencode/*) are the public
+    # tier: selecting one in a client IS the explicit per-task opt-in, so it
+    # routes to its gateway entry on the full router engine and never
+    # receives injected memory/identity context. Everything else keeps the
+    # private fail-closed gate below.
+    from openjarvis.server.cloud_router import is_engine_owned_model
+
     config = getattr(request.app.state, "config", None)
+    dispatch_engine = engine
+    if is_engine_owned_model(model):
+        router_engine = getattr(request.app.state, "router_engine", None) or engine
+        gateway_entry = await asyncio.to_thread(
+            _gateway_entry_for, router_engine, model
+        )
+        if gateway_entry is not None:
+            dispatch_engine = gateway_entry
+            # Public tier: no server agent (its loop injects memory/identity).
+            use_server_agent = False
+
+    # Inject memory context into messages before dispatching
     if (
         config is not None
         and config.intelligence.private_routing
         and not config.intelligence.allow_private_remote
         and not engine.can_serve(model)
+        and dispatch_engine is engine  # gateway tier resolves its own engine
     ):
         raise HTTPException(400, "Private routing requires an available local model")
     memory_backend = getattr(request.app.state, "memory_backend", None)
@@ -181,6 +200,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         config is not None
         and config.agent.context_from_memory
         and request_body.messages
+        and dispatch_engine is engine  # public gateway tier: no personal memory
     ):
         try:
             from openjarvis.tools.storage.context import ContextConfig, inject_context
@@ -296,13 +316,14 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         # direct token streaming when no tool-bearing agent is configured.
         if request_body.tools:
             return await _handle_stream_tools(
-                engine,
+                dispatch_engine,
                 model,
                 request_body,
                 complexity_info,
                 app_config=config,
                 bus=getattr(request.app.state, "bus", None),
                 memory_service=getattr(request.app.state, "memory_service", None),
+                include_identity=dispatch_engine is engine,
             )
         if use_server_agent:
             return await _handle_agent_stream(
@@ -315,7 +336,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 memory_service=getattr(request.app.state, "memory_service", None),
             )
         return await _handle_stream(
-            engine,
+            dispatch_engine,
             model,
             request_body,
             complexity_info,
@@ -323,6 +344,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             app_config=config,
             bus=getattr(request.app.state, "bus", None),
             memory_service=getattr(request.app.state, "memory_service", None),
+            include_identity=dispatch_engine is engine,
         )
 
     # Non-streaming: use agent if available, otherwise direct engine call.
@@ -359,12 +381,13 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         bus = getattr(request.app.state, "bus", None)
         response = await asyncio.to_thread(
             _handle_direct,
-            engine,
+            dispatch_engine,
             model,
             request_body,
             bus=bus,
             complexity_info=complexity_info,
             app_config=config,
+            include_identity=dispatch_engine is engine,
         )
 
     # Hand the completed exchange to the background memory service.
@@ -456,6 +479,98 @@ def _engine_key_for_model(engine: Any, model: str) -> str | None:
     return None
 
 
+def _free_pool_engine(engine: Any) -> Any:
+    """Unwrap wrapper layers down to the free-pool engine, or ``None``."""
+    from openjarvis.intelligence.free_pool import FreePoolEngine
+    from openjarvis.security.guardrails import GuardrailsEngine
+    from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
+
+    current = engine
+    while current is not None:
+        if isinstance(current, FreePoolEngine):
+            return current
+        if isinstance(current, InstrumentedEngine):
+            current = current._inner
+            continue
+        if isinstance(current, GuardrailsEngine):
+            current = current._engine
+            continue
+        return None
+    return None
+
+
+def _free_pool_candidate_rows(pool: Any) -> list[tuple[str, str]]:
+    """Concrete ``(model_id, engine_key)`` pairs the free pool can route to.
+
+    ``pool.list_models()`` only advertises the stable ``free/*`` and
+    ``local/*`` aliases; ``pool.generate`` additionally accepts any concrete
+    candidate id (raw local models, and remote free models when the pool
+    allows remote). Discovery can hit local HTTP, so callers should run this
+    through ``asyncio.to_thread``.
+    """
+    rows: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for candidate in pool.candidates:
+        if candidate.model_id in seen:
+            continue
+        seen.add(candidate.model_id)
+        rows.append((candidate.model_id, candidate.engine_key))
+    return rows
+
+
+def _unwrap_router_entries(engine: Any) -> list[tuple[str, Any]]:
+    """Unwrap wrapper layers down to the MultiEngine entry list, or ``[]``."""
+    from openjarvis.engine.multi import MultiEngine
+    from openjarvis.security.guardrails import GuardrailsEngine
+    from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
+
+    current = engine
+    while current is not None:
+        if isinstance(current, MultiEngine):
+            return list(current._engines)
+        if isinstance(current, InstrumentedEngine):
+            current = current._inner
+            continue
+        if isinstance(current, GuardrailsEngine):
+            current = current._engine
+            continue
+        break
+    return []
+
+
+def _free_gateway_model_rows(engine: Any) -> list[tuple[str, str]]:
+    """``(model_id, engine_key)`` rows for the registered free gateways.
+
+    Private routing replaces the app engine with a local-only pool, but the
+    router engine keeps every discovered entry — pull the gateway rows from
+    there so the picker can still show the public free tier.
+    """
+    rows: list[tuple[str, str]] = []
+    for key, entry in _unwrap_router_entries(engine):
+        if key not in {"kilogateway", "opencode"}:
+            continue
+        try:
+            rows.extend((model_id, key) for model_id in entry.list_models())
+        except Exception:
+            logging.getLogger("openjarvis.server").debug(
+                "Failed listing free-gateway models for %s", key, exc_info=True
+            )
+    return rows
+
+
+def _gateway_entry_for(engine: Any, model: str) -> Any | None:
+    """Concrete kilo/opencode entry that serves *model*, or ``None``."""
+    for key, entry in _unwrap_router_entries(engine):
+        if key not in {"kilogateway", "opencode"}:
+            continue
+        try:
+            if entry.can_serve(model):
+                return entry
+        except Exception:
+            continue
+    return None
+
+
 def _uses_direct_cloud_router(engine: Any, model: str) -> bool:
     """Whether *model* should bypass the configured engine for direct cloud."""
     from openjarvis.server.cloud_router import is_cloud_model
@@ -473,10 +588,12 @@ def _handle_direct(
     bus=None,
     complexity_info=None,
     app_config=None,
+    include_identity: bool = True,
 ) -> ChatCompletionResponse:
     """Direct engine call without agent."""
     messages = _to_messages(req.messages)
-    messages = _ensure_identity_prompt(messages, app_config)
+    if include_identity:
+        messages = _ensure_identity_prompt(messages, app_config)
     kwargs: dict[str, Any] = {}
     if req.tools:
         kwargs["tools"] = req.tools
@@ -798,6 +915,7 @@ async def _handle_stream_tools(
     app_config=None,
     bus=None,
     memory_service=None,
+    include_identity: bool = True,
 ):
     """Stream a raw OpenAI-compat function-calling response via SSE.
 
@@ -813,7 +931,8 @@ async def _handle_stream_tools(
     regresses non-tool-capable engines.
     """
     messages = _to_messages(req.messages)
-    messages = _ensure_identity_prompt(messages, app_config)
+    if include_identity:
+        messages = _ensure_identity_prompt(messages, app_config)
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     use_cloud = _uses_direct_cloud_router(engine, model)
     telemetry_engine = (
@@ -929,6 +1048,7 @@ async def _handle_stream(
     app_config=None,
     bus=None,
     memory_service=None,
+    include_identity: bool = True,
 ):
     """Stream response using SSE format.
 
@@ -942,7 +1062,8 @@ async def _handle_stream(
     from openjarvis.server.cloud_router import stream_cloud, stream_local
 
     messages = _to_messages(req.messages)
-    messages = _ensure_identity_prompt(messages, app_config)
+    if include_identity:
+        messages = _ensure_identity_prompt(messages, app_config)
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
 
     # Last user message — recorded as the trace query.
@@ -1221,6 +1342,40 @@ async def list_models(request: Request) -> ModelListResponse:
     if not model_ids:
         model_ids = await list_local_models()
 
+    owners: dict[str, str] = {
+        mid: (
+            "litellm"
+            if _engine_key_for_model(engine, mid) == "litellm"
+            else "openjarvis"
+        )
+        for mid in model_ids
+    }
+
+    # The free-pool engine routes concrete candidate ids too (raw local
+    # models; remote free models when the pool allows remote), but only
+    # advertises the stable aliases via list_models(). Expose the concrete
+    # models as well so the picker shows everything actually selectable.
+    # Discovery may hit local HTTP — keep it off the event loop. Mock/plain
+    # engines unwrap to None and skip this entirely.
+    pool = _free_pool_engine(engine)
+    if pool is not None:
+        rows = await asyncio.to_thread(_free_pool_candidate_rows, pool)
+        for cid, ckey in rows:
+            if cid in owners or is_cloud_model(cid):
+                continue
+            owners[cid] = ckey
+            model_ids.append(cid)
+
+    # Public free-gateway tier: kilo/opencode rows stay visible in the picker
+    # even when private routing replaced the engine with a local-only pool.
+    # Chat routes them per-request as public/synthetic work (no memory).
+    router_engine = getattr(request.app.state, "router_engine", None) or engine
+    gateway_rows = await asyncio.to_thread(_free_gateway_model_rows, router_engine)
+    for cid, ckey in gateway_rows:
+        owners[cid] = ckey
+        if cid not in model_ids:
+            model_ids.append(cid)
+
     # Keep embed-only models out of the chat model picker. They still work for
     # memory/retrieval via the embedder path; putting them in /v1/models made
     # the UI auto-select nomic-embed-text and fail every generation with 400.
@@ -1228,14 +1383,7 @@ async def list_models(request: Request) -> ModelListResponse:
 
     return ModelListResponse(
         data=[
-            ModelObject(
-                id=mid,
-                owned_by=(
-                    "litellm"
-                    if _engine_key_for_model(engine, mid) == "litellm"
-                    else "openjarvis"
-                ),
-            )
+            ModelObject(id=mid, owned_by=owners.get(mid, "openjarvis"))
             for mid in model_ids
         ],
     )

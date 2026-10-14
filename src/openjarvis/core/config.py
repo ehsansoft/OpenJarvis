@@ -486,6 +486,31 @@ class NaraRouterEngineConfig:
     free_only: bool = True
 
 
+@dataclass(slots=True)
+class KiloGatewayEngineConfig:
+    """Per-engine config for the Kilo Gateway free tier.
+
+    Free ``:free`` models need no credential; an optional KILOGATEWAY_API_KEY
+    is read from the environment by the engine if provisioned later.
+    """
+
+    host: str = "https://api.kilo.ai/api/gateway"
+    free_only: bool = True
+
+
+@dataclass(slots=True)
+class OpenCodeEngineConfig:
+    """Per-engine config for the OpenCode CLI relay.
+
+    ``path`` points at the opencode executable; empty means a PATH lookup.
+    Free-tier inference runs through the official CLI because OpenCode's
+    servers reject direct HTTP calls (HTTP 403 FreeTierError).
+    """
+
+    path: str = ""
+    timeout: float = 300.0
+
+
 @dataclass
 class EngineConfig:
     """Inference engine settings with nested per-engine configs."""
@@ -505,6 +530,10 @@ class EngineConfig:
     gemma_cpp: GemmaCppEngineConfig = field(default_factory=GemmaCppEngineConfig)
     lemonade: LemonadeEngineConfig = field(default_factory=LemonadeEngineConfig)
     nararouter: NaraRouterEngineConfig = field(default_factory=NaraRouterEngineConfig)
+    kilogateway: KiloGatewayEngineConfig = field(
+        default_factory=KiloGatewayEngineConfig
+    )
+    opencode: OpenCodeEngineConfig = field(default_factory=OpenCodeEngineConfig)
 
     # Backward-compat properties for old flat attribute names
     @property

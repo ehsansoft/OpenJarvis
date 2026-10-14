@@ -45,6 +45,12 @@ _LOCAL_HF_ORGS = (
 # of the generic "provider/model" OpenRouter fallback below.
 _LOCAL_VIRTUAL_PREFIXES = ("free/", "local/")
 
+# Registered free-gateway engines own provider-prefixed ids (kilo/*,
+# opencode/*). They resolve through the engine layer like virtual aliases —
+# without this, "kilo/nvidia/..." would be misrouted to OpenRouter by the
+# generic slash heuristic below.
+_ENGINE_OWNED_PREFIXES = ("kilo/", "opencode/")
+
 
 def _load_keys() -> dict[str, str]:
     """Read available cloud keys every call so live updates are picked up."""
@@ -88,9 +94,21 @@ def get_provider(model: str) -> str | None:
         return None  # local model, never route to cloud
     if any(model.startswith(prefix) for prefix in _LOCAL_VIRTUAL_PREFIXES):
         return None  # OpenJarvis virtual alias, resolved by its engine
+    if any(model.startswith(prefix) for prefix in _ENGINE_OWNED_PREFIXES):
+        return None  # engine-owned free-gateway id, resolved by its engine
     if "/" in model:  # openrouter format: "meta-llama/llama-3-8b"
         return "openrouter"
     return None
+
+
+def is_engine_owned_model(model: str) -> bool:
+    """True for ids owned by a registered free-gateway engine (kilo/*, opencode/*).
+
+    These resolve through the engine layer like virtual aliases, but unlike
+    them they are the *public tier*: reachable even under private routing,
+    routed per-request to their gateway entry, never memory-enriched.
+    """
+    return model.startswith(_ENGINE_OWNED_PREFIXES)
 
 
 def is_cloud_model(model: str) -> bool:

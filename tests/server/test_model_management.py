@@ -307,9 +307,215 @@ class TestModelsEndpointExtended:
             "openjarvis.server.routes.asyncio.to_thread",
             new_callable=AsyncMock,
         ) as mock_to_thread:
-            mock_to_thread.return_value = ["qwen3.5:4b"]
+
+            async def _fake_to_thread(fn, *args, **kwargs):
+                # Only the engine listing yields model ids; pool/gateway
+                # helpers return empty rows under this mock.
+                if fn == engine.list_models:
+                    return ["qwen3.5:4b"]
+                return []
+
+            mock_to_thread.side_effect = _fake_to_thread
             resp = client.get("/v1/models")
 
         assert resp.status_code == 200
         assert [m["id"] for m in resp.json()["data"]] == ["qwen3.5:4b"]
-        mock_to_thread.assert_awaited_once_with(engine.list_models)
+        # The engine listing still runs off the event loop, as the first await.
+        assert mock_to_thread.await_args_list[0].args[0] == engine.list_models
+
+    def test_models_list_includes_free_pool_candidates(self):
+        """Concrete free-pool candidates appear beside the stable aliases.
+
+        ``FreePoolEngine.list_models()`` only advertises the ``free/*`` and
+        ``local/*`` aliases, but ``generate()`` also routes concrete candidate
+        ids (raw local Ollama models). The picker must show them too, owned by
+        their engine key — while embed-only models stay hidden.
+        """
+        from openjarvis.intelligence.free_pool import FreePoolEngine
+
+        local = _make_ollama_engine(
+            models=["qwen3-8b:latest", "all-minilm:latest", "nomic-embed-text"],
+        )
+        local.is_cloud = False
+        pool = FreePoolEngine([("ollama", local)], allow_remote=False)
+        client = TestClient(create_app(pool, "local/fast"))
+
+        resp = client.get("/v1/models")
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        ids = [m["id"] for m in data]
+
+        # Stable aliases from pool.list_models() come first...
+        assert "local/fast" in ids
+        assert "free/auto" in ids
+        # ...then the concrete local candidate models...
+        assert "qwen3-8b:latest" in ids
+        assert ids.index("local/fast") < ids.index("qwen3-8b:latest")
+
+        owned = {m["id"]: m["owned_by"] for m in data}
+        assert owned["qwen3-8b:latest"] == "ollama"
+        assert owned["local/fast"] == "openjarvis"
+
+        # Embed-only models stay out of the chat picker.
+        assert "nomic-embed-text" not in ids
+        assert "all-minilm:latest" not in ids
+
+    def test_models_list_includes_engine_gateway_candidates(self):
+        """Remote free-gateway candidates join the picker under their prefix.
+
+        ``kilo/*``/``opencode/*`` ids must not be dropped by the direct-cloud
+        filter: they resolve through their registered engines (verified by
+        the cloud_router provider exemption), so the picker shows them with
+        their engine key as owner.
+        """
+        from openjarvis.intelligence.free_pool import FreePoolEngine
+        from openjarvis.engine._stubs import InferenceEngine
+
+        class _KiloStub(InferenceEngine):
+            engine_id = "kilogateway"
+            is_cloud = True
+
+            def __init__(self) -> None:
+                self._free = [
+                    "kilo/nvidia/nemotron-3.5-lightning:free",
+                    "kilo/kilo-auto/free",
+                ]
+
+            def generate(self, messages, *, model, **kwargs):
+                return {"content": "ok", "model": model, "usage": {}}
+
+            async def stream(self, messages, *, model, **kwargs):
+                yield "ok"
+
+            def list_models(self):
+                return list(self._free)
+
+            def health(self):
+                return True
+
+            def list_free_model_ids(self):
+                return list(self._free)
+
+            def list_model_metadata(self):
+                return [
+                    {"id": model_id, "context_length": 131_072}
+                    for model_id in self._free
+                ]
+
+        pool = FreePoolEngine([("kilogateway", _KiloStub())], allow_remote=True)
+        client = TestClient(create_app(pool, "local/fast"))
+
+        resp = client.get("/v1/models")
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        ids = [m["id"] for m in data]
+
+        assert "kilo/nvidia/nemotron-3.5-lightning:free" in ids
+        assert "free/auto" in ids
+        # Remote gateway rows come after the stable aliases.
+        assert ids.index("free/auto") < ids.index("kilo/nvidia/nemotron-3.5-lightning:free")
+
+        owned = {m["id"]: m["owned_by"] for m in data}
+        assert owned["kilo/nvidia/nemotron-3.5-lightning:free"] == "kilogateway"
+
+    def test_chat_routes_gateway_model_as_public_tier(self):
+        """kilo/* bypasses the private gate and reaches its engine verbatim.
+
+        The public free tier never receives injected memory/identity
+        context; the explicit model selection is the per-task opt-in.
+        """
+        from openjarvis.core.config import JarvisConfig
+        from openjarvis.engine.multi import MultiEngine
+
+        cfg = JarvisConfig()
+        cfg.intelligence.private_routing = True
+        cfg.intelligence.allow_private_remote = False
+
+        kilo = _make_engine(models=["kilo/kilo-auto/free"])
+        kilo.can_serve.side_effect = lambda m: m.startswith("kilo/")
+        kilo.generate.return_value = {
+            "content": "K",
+            "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 1,
+                "total_tokens": 2,
+            },
+            "model": "kilo/kilo-auto/free",
+            "finish_reason": "stop",
+        }
+        router = MultiEngine([("kilogateway", kilo)])
+
+        engine = _make_engine(models=["free/auto"])
+        engine.can_serve.return_value = False  # private pool: local only
+        app = create_app(engine, "local/fast", config=cfg, router_engine=router)
+        client = TestClient(app)
+
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "kilo/kilo-auto/free",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 16,
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["choices"][0]["message"]["content"] == "K"
+        kilo.generate.assert_called_once()
+        sent_messages = kilo.generate.call_args.args[0]
+        # No identity/memory system message was folded into the relay.
+        assert len(sent_messages) == 1
+        assert str(getattr(sent_messages[0], "role", "")).lower().endswith("user")
+
+    def test_chat_private_gate_still_blocks_unknown_remote(self):
+        """Non-gateway remote ids keep failing closed under private routing."""
+        from openjarvis.core.config import JarvisConfig
+
+        cfg = JarvisConfig()
+        cfg.intelligence.private_routing = True
+        cfg.intelligence.allow_private_remote = False
+
+        engine = _make_engine(models=["free/auto"])
+        engine.can_serve.return_value = False
+        app = create_app(engine, "local/fast", config=cfg)
+        client = TestClient(app)
+
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "mystery/remote-model",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 16,
+            },
+        )
+
+        assert resp.status_code == 400
+        assert "local model" in resp.json()["detail"].lower()
+        engine.generate.assert_not_called()
+
+    def test_models_list_shows_gateway_rows_under_private_routing(self):
+        """Gateway rows survive the private-pool wrap via the router engine."""
+        from openjarvis.core.config import JarvisConfig
+        from openjarvis.engine.multi import MultiEngine
+
+        cfg = JarvisConfig()
+        cfg.intelligence.private_routing = True
+
+        kilo = _make_engine(models=["kilo/kilo-auto/free"])
+        kilo.list_models.return_value = ["kilo/kilo-auto/free"]
+        oc = _make_engine(models=["opencode/mimo-v2.6-flash-free"])
+        oc.list_models.return_value = ["opencode/mimo-v2.6-flash-free"]
+        router = MultiEngine([("kilogateway", kilo), ("opencode", oc)])
+
+        engine = _make_engine(models=["free/auto"])
+        app = create_app(engine, "local/fast", config=cfg, router_engine=router)
+        client = TestClient(app)
+
+        resp = client.get("/v1/models")
+
+        assert resp.status_code == 200
+        owned = {m["id"]: m["owned_by"] for m in resp.json()["data"]}
+        assert owned["kilo/kilo-auto/free"] == "kilogateway"
+        assert owned["opencode/mimo-v2.6-flash-free"] == "opencode"

@@ -182,10 +182,15 @@ def infer_capabilities(model_id: str, metadata: dict[str, Any]) -> set[str]:
     return caps
 
 
-def _nara_candidates(
+def _provider_free_candidates(
     engine_key: str,
     engine: InferenceEngine,
 ) -> list[FreeModelCandidate]:
+    """Candidates from an engine that positively identifies free models.
+
+    Used for NaraRouter's free plan, the keyless Kilo Gateway, and the
+    OpenCode CLI relay — any engine exposing ``list_free_model_ids()``.
+    """
     free_method = getattr(engine, "list_free_model_ids", None)
     metadata_method = getattr(engine, "list_model_metadata", None)
     if not callable(free_method):
@@ -194,7 +199,7 @@ def _nara_candidates(
     try:
         free_ids = set(free_method())
     except Exception as exc:
-        logger.debug("NaraRouter free roster discovery failed: %s", exc)
+        logger.debug("Free roster discovery failed for %s: %s", engine_key, exc)
         return []
     if not free_ids:
         return []
@@ -204,7 +209,7 @@ def _nara_candidates(
         try:
             raw_metadata = metadata_method()
         except Exception as exc:
-            logger.debug("NaraRouter metadata discovery failed: %s", exc)
+            logger.debug("Free roster metadata failed for %s: %s", engine_key, exc)
 
     metadata_by_id = {
         str(item.get("id")): item
@@ -238,9 +243,14 @@ def collect_free_models(
     seen: set[tuple[str, str]] = set()
 
     for engine_key, engine in engines:
-        if engine_key == "nararouter":
-            discovered = _nara_candidates(engine_key, engine)
-        elif _is_zero_api_local_engine(engine_key, engine):
+        discovered: list[FreeModelCandidate] = []
+        # Engines that positively identify free models contribute their
+        # explicit roster (NaraRouter free plan, Kilo Gateway, OpenCode
+        # relay, ...). An empty roster falls through to the local check so a
+        # local backend with a stub roster method is not misclassified.
+        if callable(getattr(engine, "list_free_model_ids", None)):
+            discovered = _provider_free_candidates(engine_key, engine)
+        if not discovered and _is_zero_api_local_engine(engine_key, engine):
             try:
                 model_ids = engine.list_models()
             except Exception as exc:
@@ -271,8 +281,6 @@ def collect_free_models(
                 not in metadata_by_id.get(model_id, {}).get("capabilities", [])
                 and not any(t in model_id.lower() for t in ("embed", "nomic-bert"))
             ]
-        else:
-            discovered = []
 
         for candidate in discovered:
             key = (candidate.engine_key, candidate.model_id)

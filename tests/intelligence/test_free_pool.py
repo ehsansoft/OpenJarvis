@@ -157,6 +157,36 @@ def test_code_routing_prefers_local_coder() -> None:
     assert ranked[0].model_id == "qwen2.5-coder:7b"
 
 
+def test_any_roster_engine_beyond_nara_joins_pool() -> None:
+    """Positive free rosters are engine-agnostic (Kilo Gateway, OpenCode...).
+
+    A remote roster engine must keep its candidates even though the local
+    zero-API check rejects it — an earlier fall-through bug wiped them.
+    """
+    gateway = _FakeEngine(
+        ["kilo/nvidia/nemotron-3.5-lightning:free"],
+        is_cloud=True,
+        free_ids=["kilo/nvidia/nemotron-3.5-lightning:free"],
+        metadata=[{"id": "kilo/nvidia/nemotron-3.5-lightning:free"}],
+    )
+    candidates = collect_free_models([("kilogateway", gateway)])
+
+    assert [item.model_id for item in candidates] == [
+        "kilo/nvidia/nemotron-3.5-lightning:free"
+    ]
+    assert candidates[0].local is False
+    assert candidates[0].engine_key == "kilogateway"
+    assert candidates[0].reason == "provider-free-plan"
+
+
+def test_roster_engine_with_empty_roster_falls_through_to_local() -> None:
+    """A local backend with a stub roster method stays a local candidate."""
+    local = _FakeEngine(["qwen3:4b"])  # list_free_model_ids() -> []
+    candidates = collect_free_models([("ollama", local)])
+    assert [item.model_id for item in candidates] == ["qwen3:4b"]
+    assert candidates[0].local is True
+
+
 @pytest.mark.asyncio
 async def test_rich_stream_preserves_tool_calls() -> None:
     class _ToolEngine(_FakeEngine):

@@ -24,6 +24,23 @@ def test_get_provider_keeps_free_alias_local():
     assert cloud_router.is_cloud_model("local/research") is False
 
 
+def test_get_provider_keeps_engine_gateway_ids_local():
+    """kilo/* and opencode/* resolve through their engines, not OpenRouter.
+
+    Both are multi-slash ids; the generic slash heuristic would otherwise
+    route them to OpenRouter (which does not carry them).
+    """
+    assert cloud_router.get_provider("kilo/nvidia/nemotron-3.5-lightning:free") is None
+    assert cloud_router.get_provider("opencode/mimo-v2.6-flash-free") is None
+    assert cloud_router.is_cloud_model("kilo/kilo-auto/free") is False
+    assert cloud_router.is_cloud_model("opencode/nemotron-3-ultra-free") is False
+
+    # Bare gateway-shaped ids keep following the OpenRouter heuristic.
+    assert cloud_router.get_provider("nvidia/nemotron-3.5-lightning:free") == (
+        "openrouter"
+    )
+
+
 @pytest.mark.parametrize(
     "requested_model,expected_forwarded_model",
     [

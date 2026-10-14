@@ -240,11 +240,31 @@ export async function deleteModel(modelName: string): Promise<void> {
   }
 }
 
-const _CLOUD_PREFIXES = ['gpt-', 'o1-', 'o3-', 'o4-', 'claude-', 'gemini-', 'openrouter/'];
+const _CLOUD_PREFIXES = ['gpt-', 'o1-', 'o3-', 'o4-', 'claude-', 'gemini-', 'openrouter/', 'atlascloud/'];
+
+/**
+ * Stable free-pool aliases (`free/*`, `local/*`) are virtual: they route
+ * through the pool engine, are never deletable, and need no Ollama preload.
+ */
+export const isPoolAlias = (modelId: string): boolean => /^(free|local)\//.test(modelId);
+
+/**
+ * Engine-owned remote free-gateway ids (`kilo/*`, `opencode/*`): selectable
+ * like concrete models, but virtual for housekeeping — never deletable and
+ * no Ollama preload (the owner check skips preload for non-Ollama owners).
+ */
+export const isRemoteEngineModel = (modelId: string): boolean => /^(kilo|opencode)\//.test(modelId);
 
 export async function preloadModel(modelName: string, owner?: string): Promise<void> {
-  // Cloud models don't need Ollama preloading
-  if (owner === 'litellm' || _CLOUD_PREFIXES.some(p => modelName.startsWith(p))) {
+  // Cloud models and pool aliases don't need Ollama preloading. Concrete
+  // models owned by a non-Ollama engine (remote free candidates, other local
+  // engines' always-on servers) have nothing to warm here either.
+  if (
+    owner === 'litellm' ||
+    isPoolAlias(modelName) ||
+    _CLOUD_PREFIXES.some(p => modelName.startsWith(p)) ||
+    (owner != null && owner !== '' && owner !== 'ollama' && owner !== 'openjarvis')
+  ) {
     return;
   }
   // Trigger Ollama to load the model into memory (empty prompt, no generation).
