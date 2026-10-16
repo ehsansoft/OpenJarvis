@@ -1,0 +1,18 @@
+[
+  {
+    "Name": "TCP Query User{3B61E3E4-0384-410F-8172-75D68E095E79}C:\\program files\\voicebox\\voicebox-server.exe",
+    "DisplayName": "voicebox-server",
+    "Direction": 1,
+    "Action": 2,
+    "Enabled": 1,
+    "Profile": 4
+  },
+  {
+    "Name": "UDP Query User{E07DAE17-0320-42DD-8FDF-FEC587BEEA56}C:\\program files\\voicebox\\voicebox-server.exe",
+    "DisplayName": "voicebox-server",
+    "Direction": 1,
+    "Action": 2,
+    "Enabled": 1,
+    "Profile": 4
+  }
+]
