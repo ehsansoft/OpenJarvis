@@ -185,7 +185,10 @@ def speak(text: str, console: Any, session: VoiceSession | None = None) -> None:
             if voice_id:
                 synth_kwargs["voice_id"] = voice_id
             result = backend.synthesize(text, **synth_kwargs)
-            if result.audio:
+            meta = getattr(result, "metadata", None) or {}
+            # Voicebox desktop plays its own generations server-side; replaying
+            # the same WAV locally produced the "talks twice" effect.
+            if result.audio and not meta.get("server_played"):
                 play_wav(result.audio, sample_rate=result.sample_rate)
             return
         except Exception as exc:

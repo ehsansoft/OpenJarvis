@@ -9,6 +9,7 @@ from typing import Any
 import uvicorn
 
 from openjarvis.cli.daemon_cmd import clear_server_state, record_server_state
+from openjarvis.server.log_guard import daemon_log_config
 
 
 class DaemonServer(uvicorn.Server):
@@ -31,7 +32,13 @@ class DaemonServer(uvicorn.Server):
 
 def run_server(app: Any, *, host: str, port: int, log_level: str = "info") -> None:
     server = DaemonServer(
-        uvicorn.Config(app, host=host, port=port, log_level=log_level)
+        uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            log_level=log_level,
+            log_config=daemon_log_config(),
+        )
     )
     app.state.daemon_server = server
     try:

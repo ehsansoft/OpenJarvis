@@ -47,28 +47,46 @@ class VoiceboxTTSBackend(TTSBackend):
         except httpx.HTTPError:
             return False
 
+    def _loaded_engines(self):
+        try:
+            status = self._client.get("/models/status")
+            status.raise_for_status()
+            models = status.json().get("models", [])
+            return {
+                m.get("model_name")
+                for m in models
+                if m.get("loaded") or m.get("downloaded") and m.get("loaded")
+            }
+        except httpx.HTTPError:
+            return set()
+
     def synthesize(self, text, *, voice_id="", speed=1.0, output_format="wav"):
         if speed != 1.0 or output_format != "wav":
             raise ValueError("Voicebox supports WAV at the configured profile speed")
-        status = self._client.get("/models/status")
-        status.raise_for_status()
-        models = status.json().get("models", [])
-        if not any(m.get("model_name") == "kokoro" and m.get("loaded") for m in models):
-            raise RuntimeError(
-                "Load installed Kokoro in Voicebox first; no automatic downloads"
-            )
+        # Prefer kokoro, but fall over to ANY engine Voicebox has loaded so a
+        # stale app state can't mute the chat. Profiles carry their engine.
+        loaded = self._loaded_engines()
+        if "kokoro" not in loaded:
+            if not loaded:
+                raise RuntimeError(
+                    "No TTS engine is loaded in Voicebox (open it once to load kokoro);"
+                    " no automatic downloads"
+                )
         profiles = self._profiles()
+        candidates = [
+            p for p in profiles if p.get("preset_engine") in loaded
+        ] or profiles
         profile = (
             next(
                 (
                     p
-                    for p in profiles
+                    for p in candidates
                     if voice_id in (p["id"], p.get("name"), p.get("preset_voice_id"))
                 ),
                 None,
             )
             if voice_id
-            else next(iter(profiles), None)
+            else next(iter(candidates), None)
         )
         if profile is None:
             raise RuntimeError("Choose an existing Voicebox Kokoro preset profile")
@@ -77,7 +95,7 @@ class VoiceboxTTSBackend(TTSBackend):
             json={
                 "profile_id": profile["id"],
                 "text": text,
-                "engine": "kokoro",
+                "engine": profile.get("preset_engine", "kokoro"),
                 "language": profile.get("language", "en"),
                 "personality": False,
             },
@@ -110,7 +128,12 @@ class VoiceboxTTSBackend(TTSBackend):
             duration,
             profile["id"],
             rate,
-            {"generation_id": generation_id},
+            {
+                "generation_id": generation_id,
+                # The Voicebox desktop app plays completed generations itself;
+                # the chat must not replay the same audio locally.
+                "server_played": True,
+            },
         )
 
     def close(self):
