@@ -1,0 +1,34 @@
+# Tutorial screencast storyboard — shot-scraper video (v1.10+)
+#
+# Build from an APPROVED tutorial-script scene list: one storyboard scene per
+# script scene, same order and ids. Run only after: tool install approved with
+# D: paths set (UV_CACHE_DIR / npm_config_cache / PLAYWRIGHT_BROWSERS_PATH on
+# D:) and the local site is reachable.
+#
+# Usage pattern (after install approval):
+#   uvx shot-scraper video <storyboard.yml>            # draft .webm
+#   add --mp4                                          # handoff copy
+#
+# WAMP flows: start Apache/MySQL MANUALLY (approval gate) and leave the server
+# block empty. Node pilots may list auto-start commands if approved.
+
+output: D:\Media\{{PROJECT}}\tutorials\raw\{{DATE}}-{{SLUG}}-take1.webm
+viewport:
+  width: 1280
+  height: 720
+cursor: true
+server:
+  commands: []                 # e.g. ["npm run dev"] for node pilots, if approved
+  url: {{BASE_URL}}
+scenes:
+  - do:                        # S01 — lead-in
+      - open: "{{BASE_URL}}/"
+      - wait_for: "TODO(stable selector proving the page is ready)"
+      - pause: 0.8
+  - do:                        # S02 — first interaction
+      - click: "TODO(selector)"
+      - wait_for: "TODO(selector proving result)"
+      - pause: 0.8
+  # ... one scene per script scene (S03, S04, ...); narration text lives in the
+  # tutorial-script document, never duplicated here.
+  # Close with a settle: - pause: 1.0

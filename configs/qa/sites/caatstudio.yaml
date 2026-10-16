@@ -1,0 +1,27 @@
+# QA contract — caatstudio (video production project)
+site: caatstudio
+kind: video-studio
+notes: >
+  Primary pilot for Remotion animated explainers — the house Remotion 2.8.2
+  sidecar stack lives here. QA applies only if caatstudio (or its dashboard /
+  web surface) has a local UI; the URL below is unverified.
+base_urls:
+  - TODO(user): local dev URL of the studio UI (e.g. http://localhost:3000)
+routes:
+  - path: /
+    wait_for: TODO(selector)
+viewports: [360, 768, 1280, 1920]
+checks:
+  screenshots: true
+  console: true
+  lighthouse:
+    enabled: true
+    categories: [performance, accessibility, best-practices]
+  links:
+    depth: 1
+    max_pages: 20
+  visual_regression: false
+outputs:
+  artifacts: D:\AI-Control\OpenJarvis\support\qa
+  report_dir: D:\AI-Control\OpenJarvis\reports
+  media_root: D:\Media\caatstudio\tutorials

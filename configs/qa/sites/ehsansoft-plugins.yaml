@@ -1,0 +1,36 @@
+# QA contract — EhsanSoft plugins (WAMP, local only)
+site: ehsansoft-plugins
+kind: wordpress
+notes: >
+  Local WAMP WordPress family (ehs-base / ehs-studio / ehs-woo). Services run
+  on demand (apache + mysqld + mariadb); Ehsan approves start per session.
+  DBs live on MySQL 3306 (ehs_base / ehs_woo / ehs_studio). ehs-base.local
+  currently serves 503 "در دست تعمیر" (WP maintenance mode) — remove
+  c:/wamp64/www/ehs-base/.maintenance before auditing that site.
+  Plugin admin UI tours are recorded as browser screencasts (storyboard-recorder).
+base_urls:
+  - http://ehs-base.local          # VERIFIED live (maintenance 503 as of 2026-10-17)
+  - http://ehs-woo.local           # VERIFIED live 200 (2026-10-17)
+  - http://ehs-studio.local        # VERIFIED live 200 (2026-10-17)
+auth:
+  mode: storage_state              # WAMP-local admin only, staged by Ehsan
+  state_file: TODO(user)           # e.g. D:\AI-Control\OpenJarvis\support\qa\auth\ehs-base.json
+routes:
+  - path: /
+    wait_for: TODO(select a stable hero/text selector)
+  # TODO(user): list the plugin admin pages worth auditing (wp-admin screens)
+viewports: [360, 768, 1024, 1440, 1920]
+checks:
+  screenshots: true
+  console: true
+  lighthouse:
+    enabled: true
+    categories: [performance, accessibility, best-practices, seo]
+  links:
+    depth: 2
+    max_pages: 40
+  visual_regression: false         # enable after the first baseline set exists
+outputs:
+  artifacts: D:\AI-Control\OpenJarvis\support\qa
+  report_dir: D:\AI-Control\OpenJarvis\reports
+  media_root: D:\Media\ehsansoft-plugins\tutorials

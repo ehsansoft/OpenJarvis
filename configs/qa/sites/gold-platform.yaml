@@ -1,0 +1,32 @@
+# QA contract — gold platform (local dev servers only)
+site: gold-platform
+kind: node
+notes: >
+  QA runs against LOCAL dev servers only (npm run dev on a per-project basis).
+  Production domains are explicitly excluded from automation. Tutorial videos
+  may show production UI only with Ehsan's per-session approval, recorded as
+  browser screencasts or human narration guides.
+projects:
+  - persian-gold-trading           # confirm which get QA first
+  - melligold-nextgen
+  # TODO(user): list any further gold-family projects in scope
+base_urls:
+  - TODO(user): local dev URL per project, e.g. http://localhost:<port>
+routes:
+  - path: /
+    wait_for: TODO(selector)
+viewports: [360, 768, 1024, 1440, 1920]
+checks:
+  screenshots: true
+  console: true
+  lighthouse:
+    enabled: true
+    categories: [performance, accessibility, best-practices, seo]
+  links:
+    depth: 1
+    max_pages: 25
+  visual_regression: false
+outputs:
+  artifacts: D:\AI-Control\OpenJarvis\support\qa
+  report_dir: D:\AI-Control\OpenJarvis\reports
+  media_root: D:\Media\gold-platform\tutorials
